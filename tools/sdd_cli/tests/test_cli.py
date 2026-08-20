@@ -15,8 +15,8 @@ class SddCliTests(unittest.TestCase):
     def test_commit_message_accepts_ticket_openspec_and_sdd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.json").write_text(
                 json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}),
                 encoding="utf-8",
             )
@@ -31,18 +31,188 @@ class SddCliTests(unittest.TestCase):
             msg.write_text("plain message", encoding="utf-8")
             self.assertEqual(1, cli.validate_commit_message(arg(root, msg)))
 
-    def test_memory_search_filters_terms_and_json_shape(self) -> None:
+    def test_knowledge_search_filters_terms_and_json_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            memory = root / ".codex" / "memory"
-            memory.mkdir(parents=True)
-            (memory / "failure-patterns.md").write_text(
-                "## Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-06-25\n\nDocker failed.\n",
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-06-25\n\nDocker failed.\n",
                 encoding="utf-8",
             )
-            rows = cli.search_memory(root, ["docker"], False)
+            rows = cli.search_knowledge(root, ["docker"], False)
             self.assertEqual(1, len(rows))
             self.assertEqual("Docker Backend Timeout", rows[0]["title"])
+            self.assertEqual("knowledge", rows[0]["root"])
+
+    def test_knowledge_search_indexes_all_three_roots(self) -> None:
+        """knowledge/, docs/, and openspec/specs/ are all searchable KB roots."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\nDocker failed.\n",
+                encoding="utf-8",
+            )
+            docs = root / "docs" / "architecture"
+            docs.mkdir(parents=True)
+            (docs / "deployment.md").write_text(
+                "# Deployment\n\n## Environments\n\nDeploy via Nexus.\n",
+                encoding="utf-8",
+            )
+            (root / "docs" / "README.md").write_text(
+                "# Docs Index\n\nIgnored index file.\n",
+                encoding="utf-8",
+            )
+            specs = root / "openspec" / "specs" / "checkout"
+            specs.mkdir(parents=True)
+            (specs / "spec.md").write_text(
+                "# Checkout\n\n## Purpose\n\nUsers can pay with a card.\n",
+                encoding="utf-8",
+            )
+
+            # Search hits the right root; each row tags its source root.
+            rows = cli.search_knowledge(root, ["checkout"], False)
+            self.assertEqual(1, len(rows))
+            self.assertEqual("Checkout", rows[0]["title"])
+            self.assertEqual("openspec/specs", rows[0]["root"])
+            self.assertEqual(
+                "openspec/specs/checkout/spec.md", rows[0]["file"]
+            )
+            docs_rows = cli.search_knowledge(root, ["nexus"], False)
+            self.assertEqual(1, len(docs_rows))
+            self.assertEqual("docs", docs_rows[0]["root"])
+            self.assertEqual("docs/architecture/deployment.md", docs_rows[0]["file"])
+
+            # Terms from any root match independently.
+            self.assertEqual(1, len(cli.search_knowledge(root, ["docker"], False)))
+            self.assertEqual(1, len(cli.search_knowledge(root, ["deploy"], False)))
+
+            # No-query dict exposes all roots and the merged file list.
+            index = cli.search_knowledge(root, [], False)
+            self.assertEqual("knowledge", index["knowledgeRoot"])
+            self.assertEqual("docs", index["docsRoot"])
+            self.assertEqual("openspec/specs", index["specsRoot"])
+            self.assertEqual(
+                [
+                    "docs/architecture/deployment.md",
+                    "knowledge/errors/failure-patterns.md",
+                    "openspec/specs/checkout/spec.md",
+                ],
+                sorted(index["files"]),
+            )
+            # README index files are excluded from the file list.
+            self.assertNotIn("docs/README.md", index["files"])
+
+            # list-topics rows carry root too.
+            topics = cli.search_knowledge(root, [], True)
+            self.assertEqual(3, len(topics))
+            self.assertEqual(
+                {"knowledge", "docs", "openspec/specs"},
+                {row["root"] for row in topics},
+            )
+
+    def test_knowledge_search_docs_and_specs_roots_are_optional(self) -> None:
+        """search_knowledge works when docs//openspec/specs/ are absent."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\nDocker failed.\n",
+                encoding="utf-8",
+            )
+            index = cli.search_knowledge(root, [], False)
+            self.assertIsNone(index["docsRoot"])
+            self.assertIsNone(index["specsRoot"])
+            self.assertEqual(
+                ["knowledge/errors/failure-patterns.md"], index["files"]
+            )
+            self.assertEqual(1, len(cli.search_knowledge(root, ["docker"], False)))
+
+    def test_classify_knowledge_maps_signals_to_candidate_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed Playwright login timeout",
+                ["test/e2e/login.spec.ts", "src/auth/client.ts"],
+                "1 failed, 2 passed",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            files = [c["file"] for c in result["candidates"]]
+            self.assertTrue(any(f.startswith("knowledge/errors/") for f in files))
+            self.assertTrue(any(f.startswith("knowledge/fixes/") for f in files))
+            self.assertTrue(any(f.startswith("knowledge/implementation/") for f in files))
+            self.assertEqual(files, sorted(files))
+
+    def test_classify_knowledge_no_signals_returns_no_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Bump dependency versions",
+                ["package.json", "requirements.txt"],
+                "all 12 passed",
+                root,
+            )
+            self.assertTrue(result["noChanges"])
+            self.assertEqual([], result["candidates"])
+
+    def test_classify_knowledge_docs_paths_map_to_docs_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Document auth API",
+                ["docs/api/auth-service.md"],
+                "",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            self.assertIn("docs/api/auth-service.md", result["markers"]["docs"])
+
+    def test_classify_knowledge_spec_only_changes_map_to_the_spec(self) -> None:
+        """Archived-spec edits map to the spec itself — no spurious knowledge entries."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed checkout error",
+                ["openspec/specs/checkout/spec.md"],
+                "1 failed: timeout",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            # The spec file is the candidate (the KB record), not a new knowledge file.
+            self.assertEqual(
+                ["openspec/specs/checkout/spec.md"],
+                result["markers"]["specs"],
+            )
+            self.assertEqual([], result["markers"]["knowledge"])
+            self.assertEqual([], result["markers"]["docs"])
+            files = [c["file"] for c in result["candidates"]]
+            self.assertEqual(["openspec/specs/checkout/spec.md"], files)
+
+    def test_classify_knowledge_mixed_spec_and_source_keeps_signals(self) -> None:
+        """Spec changes alongside source keep keyword + implementation signals."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed checkout error",
+                ["openspec/specs/checkout/spec.md", "src/checkout/api.ts"],
+                "1 failed: timeout",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            self.assertIn(
+                "openspec/specs/checkout/spec.md", result["markers"]["specs"]
+            )
+            # Source + failure signals still fire for the non-spec part.
+            self.assertTrue(
+                any(f.startswith("knowledge/errors/") for f in result["markers"]["knowledge"])
+            )
+            self.assertTrue(
+                any(f.startswith("knowledge/implementation/") for f in result["markers"]["knowledge"])
+            )
 
     def test_delivery_modes_cover_common_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,10 +284,10 @@ class SddCliTests(unittest.TestCase):
     def test_audit_warns_when_openproject_time_activity_map_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", "{}")
-            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".template" / "project-profile.json", "{}")
+            write(root / ".template" / "project-profile.schema.json", "{}")
             write(
-                root / ".codex" / "client-tools.local.json",
+                root / ".template" / "client-tools.local.json",
                 json.dumps(
                     {
                         "openProject": {
@@ -136,7 +306,7 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("openProject.timeTelemetry.activityByStage", findings)
 
             write(
-                root / ".codex" / "client-tools.local.json",
+                root / ".template" / "client-tools.local.json",
                 json.dumps(
                     {
                         "openProject": {
@@ -164,9 +334,9 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             for path in (
                 "README.md",
-                ".codex/delivery-policy.json",
-                ".codex/skills/_shared/delivery-contract.md",
-                "docs/context-management.md",
+                ".template/delivery-policy.json",
+                ".agents/skills/_shared/delivery-contract.md",
+                "docs/conventions/context-management.md",
                 "infra/compose.yml",
                 "lefthook.yml",
                 "tools/sdd_cli/cli.py",
@@ -174,7 +344,7 @@ class SddCliTests(unittest.TestCase):
                 target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("x", encoding="utf-8")
-            profile = root / ".codex" / "project-profile.json"
+            profile = root / ".template" / "project-profile.json"
             profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(
                 json.dumps(
@@ -182,7 +352,7 @@ class SddCliTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (root / ".codex" / "project-profile.schema.json").write_text(
+            (root / ".template" / "project-profile.schema.json").write_text(
                 "{}", encoding="utf-8"
             )
 
@@ -199,10 +369,10 @@ class SddCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(
-                root / ".codex" / "project-profile.json",
+                root / ".template" / "project-profile.json",
                 json.dumps({"providers": {"deployment": {"id": "example"}}}),
             )
-            write(root / ".codex" / "client-tools.local.json", "{}")
+            write(root / ".template" / "client-tools.local.json", "{}")
             for mode in cli.ALL_CONFIGURE_MODES:
                 result = cli.run_configure_mode(mode, root, {}, True)
                 self.assertNotIn(
@@ -212,26 +382,11 @@ class SddCliTests(unittest.TestCase):
     def test_discover_project_guidance_returns_stack_tags_and_skills(
         self,
     ) -> None:
-        """DiscoverProjectGuidance returns stackTags and relevantSkills."""
+        """DiscoverProjectGuidance returns stackTags and internet-found skills."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
-            skills_dir = codex / "skills"
-            skills_dir.mkdir()
-            (skills_dir / "manifest.json").write_text(
-                json.dumps(
-                    {
-                        "categories": {
-                            "test": {
-                                "description": "Test skills",
-                                "skills": ["playwright/SKILL.md"],
-                            },
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
             (codex / "project-profile.local.json").write_text(
                 json.dumps({
                     "stack": {
@@ -243,15 +398,23 @@ class SddCliTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+                mock_search.return_value = (
+                    [{"package_skill": "github/awesome-copilot@react"}],
+                    [],
+                )
+                result = cli.run_configure_mode(
+                    "DiscoverProjectGuidance", root, {}, False
+                )
             self.assertTrue(result["valid"])
             self.assertIn("stackTags", result)
             self.assertIn("react", result["stackTags"])
+            self.assertIn("github/awesome-copilot@react", result["foundSkills"])
 
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text(
                 json.dumps(
@@ -289,7 +452,7 @@ class SddCliTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             common = codex / "project-profile.json"
             common.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
@@ -312,6 +475,7 @@ class SddCliTests(unittest.TestCase):
                 "SetProjectStack",
                 root,
                 {
+                    "name": "Transportar",
                     "frontend": "React + TypeScript",
                     "backend": "none",
                     "database": "",
@@ -322,6 +486,7 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual(before_common, common.read_text(encoding="utf-8"))
             profile = json.loads(local.read_text(encoding="utf-8"))
             stack = profile["stack"]
+            self.assertEqual("Transportar", profile["projectName"])
             self.assertEqual(
                 {"applies": True, "value": "React + TypeScript"}, stack["frontend"]
             )
@@ -338,19 +503,348 @@ class SddCliTests(unittest.TestCase):
                     cli.normalize_stack_domain(empty_value),
                 )
 
-    def test_project_stack_discovery_returns_skills_from_manifest(
-        self,
-    ) -> None:
-        """DiscoverProjectGuidance returns skills matching the project stack."""
+    def test_set_project_stack_requires_real_project_name(self) -> None:
+        """SetProjectStack rejects a missing or placeholder project name."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {}}), encoding="utf-8"
+            )
+            for values in (
+                {"frontend": "react"},  # name missing
+                {"name": "example", "frontend": "react"},
+                {"name": "my-app", "frontend": "react"},
+                {"name": "x", "frontend": "react"},
+                {"name": "42", "frontend": "react"},  # pure number
+            ):
+                result = cli.run_configure_mode(
+                    "SetProjectStack", root, values, False
+                )
+                self.assertFalse(result["valid"])
+                self.assertTrue(result["errors"], f"expected error for {values}")
+
+    def test_set_project_stack_accepts_name_then_scaffold_uses_it(self) -> None:
+        """After set-project-stack, the scaffold names the layout app from the
+        project name instead of a hardcoded 'example'."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {}}), encoding="utf-8"
+            )
+
+            result = cli.run_configure_mode(
+                "SetProjectStack",
+                root,
+                {"name": "Transportar Suite", "frontend": "react"},
+                False,
+            )
+            self.assertTrue(result["valid"])
+            # Project-name prefix rule: the layout marker is the project's web
+            # skeleton, so it is named <project-slug>-<role> (transportar-suite-web).
+            self.assertTrue(
+                (root / "apps" / "transportar-suite-web" / "src").is_dir()
+            )
+            self.assertFalse((root / "apps" / "example").exists())
+            marker = json.loads(
+                (root / "apps" / "transportar-suite-web" / "app.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("transportar-suite-web", marker["appId"])
+
+    def test_scaffold_project_files_creates_only_stack_independent_skeleton(
+        self,
+    ) -> None:
+        """ScaffoldProjectFiles creates the apps/ skeleton + delegation marker."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "react"},
+                            "backend": {"applies": False, "value": ""},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            # ADR-0002 containers: apps/ (one folder per deployable app) + packages/.
+            self.assertTrue((root / "apps").is_dir())
+            self.assertTrue((root / "packages").is_dir())
+            # One example app documents the per-app layout: src/, deploy/ and
+            # test/ with one subfolder per type.
+            self.assertTrue((root / "apps" / "example" / "src").is_dir())
+            self.assertTrue((root / "apps" / "example" / "deploy").is_dir())
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "integration").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "test" / "e2e").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "architecture").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "app.json").is_file())
+            # No root-level src/ or test/ skeleton (per-app layout only).
+            self.assertFalse((root / "src").exists())
+            self.assertFalse((root / "test").exists())
+            # Stack-specific artifacts are delegated to the AI scaffold skill —
+            # the script never generates package.json/playwright for any stack.
+            self.assertFalse((root / "e2e").exists())
+            self.assertFalse((root / "package.json").exists())
+            self.assertFalse((root / "playwright.config.ts").exists())
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+            self.assertIn("app.marker", keys)
+
+    def test_scaffold_project_files_delegates_for_any_stack(self) -> None:
+        """Non-JS stacks get the same skeleton + delegation (no stack heuristics)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "asp.net"},
+                            "backend": {"applies": True, "value": ".net"},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertTrue((root / "apps" / "example" / "src").is_dir())
+            self.assertTrue((root / "apps" / "example" / "deploy").is_dir())
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "integration").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "test" / "e2e").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "architecture").is_dir()
+            )
+            self.assertFalse((root / "package.json").exists())
+            self.assertFalse((root / "playwright.config.ts").exists())
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_project_files_warns_on_legacy_tests_layout(self) -> None:
+        """ScaffoldProjectFiles warns when a legacy tests/ folder exists."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "react"},
+                            "backend": {"applies": False, "value": ""},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "tests").mkdir()
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("folder.legacy-tests", keys)
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
+
+    def test_scaffold_k8s_delegates_dockerfiles_and_keeps_deterministic_manifests(
+        self,
+    ) -> None:
+        """scaffold_k8s records stack.delegated without needing a classified stack."""
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "laravel"},
+                            "backend": {"applies": True, "value": "spring"},
+                            "database": {"applies": True, "value": "postgres"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "front", "role": "web"},
+                            {"appId": "back", "role": "api"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = scaffold_k8s(root, dry_run=True)
+
+            self.assertTrue(result["valid"])
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_k8s_real_run_composes_app_deploy_dirs_into_overlays(
+        self,
+    ) -> None:
+        """Real run: manifests land in apps/<appId>/deploy/ and the env overlays
+        compose them via relative Kustomize refs (ADR-0002, no infra/k8s/base/)."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "frontend", "role": "web", "kind": "service"},
+                            {"appId": "backend", "role": "api", "kind": "service"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            # Seed a valid canonical ports.json (the shipped file, valid by
+            # construction) so load_ports + write_artifacts succeed.
+            src = (
+                Path(__file__).resolve().parents[3]
+                / "infra"
+                / "deployment"
+                / "ports.json"
+            )
+            (root / "infra" / "deployment" / "ports.json").write_bytes(
+                src.read_bytes()
+            )
+
+            with patch(
+                "tools.sdd_cli.k8s_lab.run_native",
+                return_value={"returncode": 0, "stdout": "{}", "stderr": ""},
+            ):
+                result = scaffold_k8s(root, dry_run=False)
+
+            self.assertTrue(result["valid"])
+            # Per-app manifests + kustomization land in apps/<appId>/deploy/.
+            for app_id in ("frontend", "backend"):
+                deploy = root / "apps" / app_id / "deploy"
+                self.assertTrue((deploy / f"{app_id}-deployment.yaml").is_file())
+                self.assertTrue((deploy / f"{app_id}-service.yaml").is_file())
+                self.assertTrue((deploy / "kustomization.yaml").is_file())
+            # The old shared base dir is never created.
+            self.assertFalse((root / "infra" / "k8s" / "base").exists())
+            # Every env overlay composes the per-app deploy dirs via relative
+            # refs that resolve from infra/k8s/overlays/{env}/ (4 levels up),
+            # and keeps the service-patch wired as a strategic-merge patch.
+            for env in ("dev", "qa", "prod"):
+                kus = root / "infra" / "k8s" / "overlays" / env / "kustomization.yaml"
+                text = kus.read_text(encoding="utf-8")
+                self.assertIn("../../../../apps/frontend/deploy", text)
+                self.assertIn("../../../../apps/backend/deploy", text)
+                self.assertIn("patches:", text)
+                self.assertIn("service-patch.yaml", text)
+                for ref in (
+                    "../../../../apps/frontend/deploy",
+                    "../../../../apps/backend/deploy",
+                ):
+                    self.assertTrue((kus.parent / ref).is_dir(), ref)
+
+    def test_scaffold_k8s_job_app_emits_job_yaml_no_service(self) -> None:
+        """ADR-0003: a kind=job app gets a Job manifest only — no Service, no
+        NodePort, and it is composed into the env overlays like any app."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "db-bootstrap", "role": "job", "kind": "job"},
+                            {"appId": "app-web", "role": "web", "kind": "service"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            src = (
+                Path(__file__).resolve().parents[3]
+                / "infra"
+                / "deployment"
+                / "ports.json"
+            )
+            (root / "infra" / "deployment" / "ports.json").write_bytes(
+                src.read_bytes()
+            )
+
+            with patch(
+                "tools.sdd_cli.k8s_lab.run_native",
+                return_value={"returncode": 0, "stdout": "{}", "stderr": ""},
+            ):
+                result = scaffold_k8s(root, dry_run=False)
+
+            self.assertTrue(result["valid"])
+            boot_deploy = root / "apps" / "db-bootstrap" / "deploy"
+            # Job manifest, kustomization — and NO service/deployment files.
+            self.assertTrue((boot_deploy / "job.yaml").is_file())
+            self.assertTrue((boot_deploy / "kustomization.yaml").is_file())
+            self.assertFalse((boot_deploy / "db-bootstrap-service.yaml").exists())
+            self.assertFalse((boot_deploy / "db-bootstrap-deployment.yaml").exists())
+            # Service app keeps the Deployment+Service pair.
+            storefront = root / "apps" / "app-web" / "deploy"
+            self.assertTrue((storefront / "app-web-deployment.yaml").is_file())
+            self.assertTrue((storefront / "app-web-service.yaml").is_file())
+            # Job app is composed into the overlays like any app.
+            dev_kus = root / "infra" / "k8s" / "overlays" / "dev" / "kustomization.yaml"
+            self.assertIn("../../../../apps/db-bootstrap/deploy", dev_kus.read_text(encoding="utf-8"))
+
+    def test_project_stack_discovery_returns_skills_from_internet(
+        self,
+    ) -> None:
+        """DiscoverProjectGuidance searches the internet — never local skills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text(
                 json.dumps({"schemaVersion": 1}), encoding="utf-8"
             )
-            skills_dir = codex / "skills"
-            skills_dir.mkdir()
+            skills_dir = root / ".agents" / "skills"
+            skills_dir.mkdir(parents=True)
+            # A rich local manifest must NOT influence discover results.
             (skills_dir / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -369,31 +863,49 @@ class SddCliTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            cli.run_configure_mode(
-                "SetProjectStack",
-                root,
-                {
-                    "frontend": "reactjs",
-                    "backend": ".net-core-10",
-                    "database": "sqlite",
-                },
-                False,
-            )
+            # Patch the internet search during SetProjectStack too (it triggers
+            # guidance setup) so the test never fires a real npx skills call.
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_setup_search:
+                mock_setup_search.return_value = ([], [])
+                cli.run_configure_mode(
+                    "SetProjectStack",
+                    root,
+                    {
+                        "name": "transportar",
+                        "frontend": "reactjs",
+                        "backend": ".net-core-10",
+                        "database": "sqlite",
+                    },
+                    False,
+                )
 
-            result = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+                mock_search.return_value = (
+                    [{"package_skill": "internet/repo@stack-skill"}],
+                    [],
+                )
+                result = cli.run_configure_mode(
+                    "DiscoverProjectGuidance", root, {}, False
+                )
             self.assertTrue(result["valid"])
             self.assertIn("stackTags", result)
             self.assertIn("reactjs", result["stackTags"])
+            # Answer comes from the internet, not from the local manifest.
+            self.assertIn("internet/repo@stack-skill", result["foundSkills"])
+            self.assertNotIn("playwright", result["foundSkills"])
 
     def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.local.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.local.json").write_text(
                 "{}", encoding="utf-8"
             )
             values_file = root / "values.json"
-            values_file.write_text(json.dumps({"frontend": "none"}), encoding="utf-8")
+            values_file.write_text(
+                json.dumps({"name": "Transportar", "frontend": "none"}),
+                encoding="utf-8",
+            )
 
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(
@@ -415,14 +927,17 @@ class SddCliTests(unittest.TestCase):
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
             self.assertFalse(profile["stack"]["frontend"]["applies"])
 
             with patch(
-                "sys.stdin", io.StringIO(json.dumps({"backend": "FastAPI + Python"}))
+                "sys.stdin",
+                io.StringIO(
+                    json.dumps({"name": "Transportar", "backend": "FastAPI + Python"})
+                ),
             ), redirect_stdout(io.StringIO()):
                 self.assertEqual(
                     0,
@@ -443,7 +958,7 @@ class SddCliTests(unittest.TestCase):
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -462,14 +977,16 @@ class SddCliTests(unittest.TestCase):
                                     "--root",
                                     str(root),
                                     "--values-json",
-                                    json.dumps({"database": "PostgreSQL"}),
+                                    json.dumps(
+                                        {"name": "Transportar", "database": "PostgreSQL"}
+                                    ),
                                 ],
                             },
                         )()
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -493,17 +1010,6 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("Invalid JSON in --values-json", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_infra_up_builds_docker_compose_command(self) -> None:
-        calls = []
-
-        def runner(command, cwd, env):
-            calls.append(command)
-            return 0
-
-        self.assertEqual(0, cli.infra_compose("up", runner))
-        self.assertIn("compose", calls[0])
-        self.assertEqual(["up", "-d", "--remove-orphans"], calls[0][-3:])
-
     def test_tool_install_copies_runtime_assets_and_excludes_tool_only_files(
         self,
     ) -> None:
@@ -513,16 +1019,13 @@ class SddCliTests(unittest.TestCase):
             target = root / "consumer"
             write(source / "README.md", "readme")
             write(source / "AGENTS.md", "agents")
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "skill")
-            write(source / ".codex" / "providers" / "repo.example.md", "provider")
-            write(source / ".codex" / "project-profile.json", "{}")
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "skill")
+            write(source / ".template" / "project-profile.json", "{}")
             write(source / "openspec" / "config.yaml", "config")
             write(source / "openspec" / "changes" / "internal" / "tasks.md", "no")
             write(source / "tools" / "sdd_cli" / "cli.py", "tool")
             write(source / "tools" / "sdd_cli" / "tests" / "test_cli.py", "no")
-            write(source / ".codex" / "memory" / "MEMORY.md", "memory")
-            write(source / ".codex" / "memory" / "memory_summary.md", "summary")
-            write(source / ".codex" / "memory" / "retrieval-policy.md", "policy")
+            write(source / "knowledge" / "README.md", "knowledge")
             write(source / "infra" / "openproject" / "data" / "runtime.db", "no")
             write(
                 source
@@ -540,19 +1043,13 @@ class SddCliTests(unittest.TestCase):
 
             self.assertEqual("v0.1.0", result["version"])
             self.assertTrue(
-                (target / ".codex" / "skills" / "demo" / "SKILL.md").exists()
+                (target / ".agents" / "skills" / "demo" / "SKILL.md").exists()
             )
             self.assertTrue((target / "tools" / "sdd_cli" / "cli.py").exists())
             self.assertFalse(
                 (target / "tools" / "sdd_cli" / "tests" / "test_cli.py").exists()
             )
-            self.assertTrue((target / ".codex" / "memory" / "MEMORY.md").exists())
-            self.assertTrue(
-                (target / ".codex" / "memory" / "memory_summary.md").exists()
-            )
-            self.assertTrue(
-                (target / ".codex" / "memory" / "retrieval-policy.md").exists()
-            )
+            self.assertTrue((target / "knowledge" / "README.md").exists())
             # Template install should initialize a git repo for lefthook hooks
             self.assertTrue((target / ".git").exists())
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
@@ -576,36 +1073,17 @@ class SddCliTests(unittest.TestCase):
                 ).exists()
             )
             manifest = json.loads(
-                (target / ".codex" / "sdd-tool-version.json").read_text(
+                (target / ".template" / "sdd-tool-version.json").read_text(
                     encoding="utf-8"
                 )
             )
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
 
-    def test_tool_install_includes_bm25s_flashrank_assets(self) -> None:
+    def test_init_local_files_repairs_knowledge_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "tool"
-            target = root / "consumer"
-            write(source / "tools" / "bm25s_flashrank" / "setup_mcp.py", "setup")
-            write(
-                source / "tools" / "bm25s_flashrank" / "mcp_doc_research.py", "research"
-            )
-
-            cli.install_sdd_tool(source, target, "v0.1.0", "install")
-
-            self.assertTrue(
-                (target / "tools" / "bm25s_flashrank" / "setup_mcp.py").exists()
-            )
-            self.assertTrue(
-                (target / "tools" / "bm25s_flashrank" / "mcp_doc_research.py").exists()
-            )
-
-    def test_init_local_files_repairs_memory_and_env_files(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            write(root / ".codex" / "client-tools.example.json", "{}")
-            write(root / ".codex" / "quality.example.json", "{}")
+            write(root / ".template" / "client-tools.example.json", "{}")
+            write(root / ".template" / "quality.example.json", "{}")
             write(
                 root / "infra" / "openproject" / "variables.env.example",
                 "OPENPROJECT_HOST=http://localhost\n",
@@ -622,11 +1100,7 @@ class SddCliTests(unittest.TestCase):
             result = cli.run_configure_mode("InitLocalFiles", root, {}, False)
 
             self.assertTrue(result["valid"])
-            self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
-            self.assertTrue((root / ".codex" / "memory" / "memory_summary.md").exists())
-            self.assertTrue(
-                (root / ".codex" / "memory" / "retrieval-policy.md").exists()
-            )
+            self.assertTrue((root / "knowledge" / "README.md").exists())
             self.assertTrue((root / "infra" / "openproject" / "variables.env").exists())
 
     def test_env_update_modes_validate_example_keys_and_preserve_values(self) -> None:
@@ -695,8 +1169,8 @@ class SddCliTests(unittest.TestCase):
     def test_audit_reports_env_template_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", "{}")
-            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".template" / "project-profile.json", "{}")
+            write(root / ".template" / "project-profile.schema.json", "{}")
             write(
                 root / "infra" / "openproject" / "variables.env.example",
                 "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n",
@@ -723,7 +1197,7 @@ class SddCliTests(unittest.TestCase):
             encoding="utf-8"
         )
         configure = (
-            repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md"
+            repo / ".agents" / "skills" / "configure-dev-environment" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
         self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
@@ -735,10 +1209,30 @@ class SddCliTests(unittest.TestCase):
         self.assertIn("compose-up", configure)
         self.assertIn("set-project-stack", configure)
 
+    def test_skill_catalog_lives_in_agents_skills(self) -> None:
+        """Skills live in .agents/skills; .codex hosts no skill or pointer files."""
+        repo = Path(__file__).resolve().parents[3]
+        # Canonical skill home: manifest + shared contracts resolve on disk.
+        self.assertTrue((repo / ".agents" / "skills" / "manifest.json").is_file())
+        self.assertTrue(
+            (repo / ".agents" / "skills" / "_shared" / "delivery-contract.md").is_file()
+        )
+        # The config home is now .template; the old .codex dir must not exist.
+        self.assertTrue((repo / ".template" / "delivery-policy.json").is_file())
+        self.assertFalse(
+            (repo / ".codex").exists(),
+            ".codex must not exist (config home renamed to .template)",
+        )
+        # The runtime index resolves to the skills directory.
+        index = json.loads(
+            (repo / ".agents" / "skills.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual([{"path": "./skills"}], index["entries"])
+
     def test_setup_lab_dry_run_returns_valid(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
@@ -830,32 +1324,32 @@ class SddCliTests(unittest.TestCase):
             source = root / "tool"
             target = root / "consumer"
             write(source / "README.md", "one")
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "old")
-            write(source / ".codex" / "skills" / "stale" / "SKILL.md", "remove later")
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "old")
+            write(source / ".agents" / "skills" / "stale" / "SKILL.md", "remove later")
             cli.install_sdd_tool(source, target, "v0.1.0", "install")
             write(
-                target / ".codex" / "project-profile.local.json",
+                target / ".template" / "project-profile.local.json",
                 '{"stack": "consumer"}',
             )
             write(target / "src" / "app.txt", "product")
 
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "new")
-            (source / ".codex" / "skills" / "stale" / "SKILL.md").unlink()
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "new")
+            (source / ".agents" / "skills" / "stale" / "SKILL.md").unlink()
             result = cli.install_sdd_tool(source, target, "v0.2.0", "update")
 
             self.assertEqual("v0.2.0", result["version"])
             self.assertEqual(
                 "new",
-                (target / ".codex" / "skills" / "demo" / "SKILL.md").read_text(
+                (target / ".agents" / "skills" / "demo" / "SKILL.md").read_text(
                     encoding="utf-8"
                 ),
             )
             self.assertFalse(
-                (target / ".codex" / "skills" / "stale" / "SKILL.md").exists()
+                (target / ".agents" / "skills" / "stale" / "SKILL.md").exists()
             )
             self.assertEqual(
                 '{"stack": "consumer"}',
-                (target / ".codex" / "project-profile.local.json").read_text(
+                (target / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 ),
             )
@@ -886,16 +1380,187 @@ class SddCliTests(unittest.TestCase):
                     return "v0.1.0\nv0.1.7-rc.2\nv0.1.6\nv0.1.7\n"
                 return ""
 
-            with patch.object(cli, "git_text", fake_git_text):
+            with patch("tools.sdd_cli.tool_installer.git_text", fake_git_text):
                 result = cli.install_sdd_tool(source, target, None, "install")
 
             self.assertEqual("v0.1.7", result["version"])
             manifest = json.loads(
-                (target / ".codex" / "sdd-tool-version.json").read_text(
+                (target / ".template" / "sdd-tool-version.json").read_text(
                     encoding="utf-8"
                 )
             )
             self.assertEqual("v0.1.7", manifest["version"])
+
+    def test_tool_install_end_to_end_from_real_source_tree(self) -> None:
+        """E2E: install the real repo source tree into a fresh consumer target.
+
+        Replaces the deleted install_target fixture as the baseline: the target
+        must reproduce the source tree exactly — managed files byte-identical,
+        exclusions honored, manifest written with a source-matching checksum,
+        and git bootstrapped on dev.
+        """
+        from tools.sdd_cli._shared import REPO_ROOT as real_root
+        from tools.sdd_cli._shared import sdd_tool_checksum, sdd_tool_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            files = sdd_tool_files(real_root)
+            result = cli.install_sdd_tool(real_root, target, "v0.0.0-e2e", "install")
+
+            self.assertEqual("install", result["action"])
+            self.assertEqual(len(files), result["managedFileCount"])
+            self.assertGreater(len(files), 100)  # real tree is large
+
+            # Key files exist and are byte-identical to the source tree.
+            for relative in (
+                "AGENTS.md",
+                "lefthook.yml",
+                ".agents/skills/manifest.json",
+                ".agents/skills/docs-knowledge-maintenance/SKILL.md",
+                "tools/sdd_cli/cli.py",
+                "tools/sdd_cli/knowledge_search.py",
+                "knowledge/README.md",
+            ):
+                self.assertTrue((target / relative).exists(), relative)
+                self.assertEqual(
+                    (real_root / relative).read_bytes(),
+                    (target / relative).read_bytes(),
+                    f"byte drift on {relative}",
+                )
+
+            # Exclusions honored: tool tests, pyc artifacts, and openspec changes are absent.
+            self.assertFalse((target / "tools" / "sdd_cli" / "tests").exists())
+            self.assertFalse((target / "openspec" / "changes").exists())
+            self.assertFalse(any(p.suffix == ".pyc" for p in target.rglob("*")))
+
+            # Manifest written with the real managed file list. The checksum is
+            # compared against the SOURCE tree (every managed file exists there,
+            # so a silently-missed copy or byte drift both fail this assertion).
+            manifest = json.loads(
+                (target / ".template" / "sdd-tool-version.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("v0.0.0-e2e", manifest["version"])
+            self.assertEqual(len(files), len(manifest["managedFiles"]))
+            self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
+            self.assertNotIn(
+                "tools/sdd_cli/tests/test_cli.py", manifest["managedFiles"]
+            )
+            self.assertEqual(
+                manifest["checksumSha256"], sdd_tool_checksum(real_root, files)
+            )
+
+            # Blacklist semantics: every managed file is a tracked template file.
+            # Untracked local files (secrets, runtime DB data, generated output)
+            # are gitignored in the source tree and must never ship.
+            tracked = set(cli.git_text(real_root, ["ls-files"]).splitlines())
+            self.assertLessEqual(set(manifest["managedFiles"]), tracked)
+            self.assertNotIn(
+                "infra/monitoring/variables.env", manifest["managedFiles"]
+            )
+            self.assertNotIn(
+                ".template/client-tools.local.json", manifest["managedFiles"]
+            )
+            self.assertNotIn(".trunk/configs/.markdownlint.yaml", manifest["managedFiles"])
+
+            # Git bootstrapped locally on the dev branch (lefthook-ready).
+            self.assertTrue((target / ".git").exists())
+            self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
+
+    def test_tool_update_preserves_legacy_managed_env_files(self) -> None:
+        """Update never deletes consumer env files older manifests managed.
+
+        Before the gitignore blacklist, the walk shipped untracked local files
+        such as infra/monitoring/variables.env and recorded them in
+        managedFiles. An update from a git source must not unlink those
+        consumer-configured files just because they are no longer managed.
+        """
+        import subprocess as sp
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "tool"
+            target = root / "consumer"
+            source.mkdir(parents=True, exist_ok=True)
+            (source / ".gitignore").write_text("*.env\n", encoding="utf-8")
+            write(source / "AGENTS.md", "agents")
+            write(
+                source / "infra" / "monitoring" / "variables.env",
+                "SECRET=src\n",
+            )
+            sp.run(["git", "init", "-q", str(source)], check=True)
+            sp.run(["git", "add", "-A"], cwd=str(source), check=True)
+
+            # Simulate an OLD install whose manifest managed the env file.
+            write(
+                target / ".template" / "sdd-tool-version.json",
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "tool": "sdd-tool",
+                        "version": "v0.1.0",
+                        "managedFiles": [
+                            "AGENTS.md",
+                            "infra/monitoring/variables.env",
+                        ],
+                        "preservedFiles": [],
+                    }
+                ),
+            )
+            write(target / "AGENTS.md", "old agents")
+            write(
+                target / "infra" / "monitoring" / "variables.env",
+                "SECRET=consumer\n",
+            )
+
+            result = cli.install_sdd_tool(source, target, "v0.2.0", "update")
+
+            self.assertEqual("v0.2.0", result["version"])
+            self.assertEqual(0, result["removedFileCount"])
+            self.assertEqual(
+                "SECRET=consumer\n",
+                (target / "infra" / "monitoring" / "variables.env").read_text(
+                    encoding="utf-8"
+                ),
+            )
+
+    def test_walk_excludes_gitignored_untracked_but_keeps_rest(self) -> None:
+        """walk_sdd_source_files treats .gitignore as an extra blacklist.
+
+        Tracked files and untracked-but-not-ignored files are kept; only
+        gitignored-and-untracked local files are excluded.
+        """
+        import subprocess as sp
+
+        from tools.sdd_cli._shared import walk_sdd_source_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "tool"
+            source.mkdir(parents=True, exist_ok=True)
+            (source / "tracked.txt").write_text("t", encoding="utf-8")
+            # Tracked-but-ignored file must still be kept (blacklist walk,
+            # not a git whitelist) — mirrors .vscode/mcp.json in the real repo.
+            (source / "ignored-but-tracked.txt").write_text("x", encoding="utf-8")
+            (source / ".gitignore").write_text("*.env\nignored-but-tracked.txt\n", encoding="utf-8")
+            (source / "secret.env").write_text("s", encoding="utf-8")
+            (source / "kept-untracked.txt").write_text("k", encoding="utf-8")
+            sp.run(["git", "init", "-q", str(source)], check=True)
+            sp.run(["git", "add", "tracked.txt", ".gitignore"], cwd=str(source), check=True)
+            # Force-add the ignored file — mirrors .vscode/mcp.json, which is
+            # tracked in the real repo even though .gitignore lists it.
+            sp.run(
+                ["git", "add", "-f", "ignored-but-tracked.txt"],
+                cwd=str(source),
+                check=True,
+            )
+
+            files = walk_sdd_source_files(source)
+            self.assertIn("tracked.txt", files)
+            self.assertIn(".gitignore", files)
+            self.assertIn("ignored-but-tracked.txt", files)
+            self.assertIn("kept-untracked.txt", files)
+            self.assertNotIn("secret.env", files)
 
 
 def arg(root: Path, message: Path):

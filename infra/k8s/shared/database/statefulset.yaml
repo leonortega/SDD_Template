@@ -1,0 +1,86 @@
+# Shared database engine — one per environment namespace (ADR-0003).
+#
+# This is a stack-agnostic skeleton: the image and probes below follow the
+# project-wide engine choice from project-profile.local.json → stack.database.
+# The shipped default (postgres:16-alpine) is a lab placeholder — the AI
+# scaffold (dev-flow-scaffold-project) rewrites this file for the selected
+# engine (PostgreSQL, SQL Server, MySQL, ...) after stack selection.
+#
+# Kind-lab note: the PVC data dies with the cluster (kind is not persistent) —
+# same limitation as the rest of the lab. Recreating the cluster means the
+# engine restarts empty; the db-bootstrap job (scaffold template
+# .template/scaffold/db-bootstrap) must be re-runnable to
+# recreate logical databases/roles/extensions.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database
+spec:
+  serviceName: database
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: database
+          # Engine placeholder — replaced at scaffold time with the
+          # project-profile stack.database image (e.g. mcr.microsoft.com/mssql/server).
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: db
+          env:
+            # Lab defaults; override via the env overlay patches in a consumer
+            # repo (never commit real credentials to the template).
+            - name: POSTGRES_PASSWORD
+              value: sdd-lab-password
+            # Logical databases created on first start, one per app that owns
+            # schema (per logical database). The db-bootstrap Job is the
+            # canonical creator — this is a convenience seed only.
+            - name: POSTGRES_DB
+              value: sdd
+            - name: POSTGRES_USER
+              value: sdd
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # No explicit storageClassName: use the cluster default (kind ships
+        # `standard`, the rancher.io/local-path provisioner). Pinning a
+        # non-existent class (e.g. local-path) leaves the PVC Pending forever.
+        resources:
+          requests:
+            storage: 5Gi

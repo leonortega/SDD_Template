@@ -1,15 +1,39 @@
+# Scan layering (authority: docs/architecture/deployment.md + delivery-policy quality gates):
+#   pre-commit  -> fast, staged-only gates (gitleaks protect, trunk fmt)
+#   commit-msg  -> commit message contract + secrets on the full tree
+#   pre-push    -> product tests + coverage gate (stack-tests)
+#   CI          -> full gate set (gitleaks detect, semgrep, trivy, checkov,
+#                  JSON validation, dev-flow label) in
+#                  .gitea/workflows/pr-validation.yml — CI remains the
+#                  authoritative coverage/scan gate.
 pre-commit:
   commands:
     gitleaks-staged:
       run: gitleaks protect --staged --redact
     trunk-fmt:
-      run: npx trunk fmt
+      # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
+      # Scoped to apps/: community skills under .agents/skills are third-party
+      # and are not formatted by the product hook.
+      run: npx --yes trunk fmt apps
+
+# Product tests (unit, integration, architecture) + the coverage gate run
+# locally BEFORE push so the CI image stays lean (stack runtimes live on the
+# dev machine, not in sdd-e2e-ci:local). Driven by stack.testFrameworks;
+# coverage threshold from quality.local.json -> coverage.minimumPercent
+# (default 80). Skipped cleanly when no stack is configured.
+pre-push:
+  commands:
+    stack-tests:
+      run: python -m tools.sdd_cli stack-tests
 
 commit-msg:
   commands:
     require-ticket:
-      run: python -m tools.sdd_cli dev-flow validate-commit-message "{1}"
+      run: python -m tools.sdd_cli dev-flow validate-commit-message --message-file {1}
     gitleaks-msg:
-      run: gitleaks detect --source . --no-git --redact --verbose
+      run: gitleaks detect --source . --no-git --redact --verbose --config .gitleaks.toml
     trunk-check:
-      run: npx trunk check --all --ci --no-fix
+      # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
+      # Scoped to apps/: the SDD shell (template/docs/infra/tools) is validated
+      # by its own CI gates, not the product pre-push hook.
+      run: npx --yes trunk check apps --ci --no-fix

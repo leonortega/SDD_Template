@@ -12,14 +12,13 @@ datasources:
     editable: true
     jsonData:
       allowedHosts:
+        - http://health-probe:8090
         - http://host.docker.internal:8088
         - http://host.docker.internal:3000
         - http://host.docker.internal:5001
         - http://host.docker.internal:8081
+        - http://host.docker.internal:8082
         - http://host.docker.internal:8083
-        - http://sdd-cluster-control-plane:30080
-        - http://sdd-cluster-control-plane:30500
-        - http://sdd-cluster-control-plane:30780
-        - http://localhost:30080
-        - http://localhost:30500
-        - http://localhost:30780
+        - http://host.docker.internal:5002
+        - http://host.docker.internal:5003
+        - http://host.docker.internal:5004

@@ -29,6 +29,7 @@ ALL_CONFIGURE_MODES: list[str] = [
     "SetProjectStackMetadata",
     "SetQualityConfig",
     "SetSemgrepConfig",
+    "ScaffoldProjectFiles",
     "SetupProjectGuidance",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
@@ -75,18 +76,6 @@ def normalize_stack_domain(value: Any) -> dict[str, Any]:
     from ._shared import normalize_stack_domain as _impl
 
     return _impl(value)
-
-
-def infra_compose(action: str, runner: Any = None) -> int:
-    if action == "up":
-        return (
-            0
-            if runner is None
-            else runner(
-                ["docker", "compose", "up", "-d", "--remove-orphans"], None, None
-            )
-        )
-    return 0
 
 
 def read_ticket_pattern(root: Path) -> str:
@@ -179,12 +168,23 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
     return handler()
 
 
-def search_memory(
-    root: Path, terms: list[str], json_output: bool = False
+def search_knowledge(
+    root: Path, terms: list[str], list_topics: bool = False
 ) -> list[dict[str, Any]]:
-    from .memory_search import search_memory as _search
+    from .knowledge_search import search_knowledge as _search
 
-    return _search(root, terms, json_output)
+    return _search(root, terms, list_topics)
+
+
+def classify_knowledge(
+    task: str,
+    changed_files: list[str],
+    test_results: str,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    from .knowledge_search import classify_knowledge as _classify
+
+    return _classify(task, changed_files, test_results, root)
 
 
 def install_sdd_tool(
@@ -194,17 +194,9 @@ def install_sdd_tool(
     action: str,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    import tools.sdd_cli.tool_installer as _ti_mod
-
     from .tool_installer import install_or_update_sdd_tool
 
-    # Temporarily replace git_text with cli.git_text so tests can patch it
-    _orig_git_text = _ti_mod.git_text
-    _ti_mod.git_text = git_text
-    try:
-        return install_or_update_sdd_tool(source, target, version, action, dry_run)
-    finally:
-        _ti_mod.git_text = _orig_git_text
+    return install_or_update_sdd_tool(source, target, version, action, dry_run)
 
 
 def configure_mode(args: Any) -> int:
@@ -255,6 +247,7 @@ def run_configure_mode(
         set_project_stack_metadata,
         set_quality_config,
         set_semgrep_config,
+        scaffold_project_files,
         split_infra_env,
         validate_gitea_runner,
         validate_observability,
@@ -283,6 +276,7 @@ def run_configure_mode(
         "SetGiteaBranchProtection": set_gitea_branch_protection,
         "SplitInfraEnv": split_infra_env,
         "SetSemgrepConfig": set_semgrep_config,
+        "ScaffoldProjectFiles": scaffold_project_files,
     }
     if mode in direct_no_values:
         return direct_no_values[mode](root, dry_run)
@@ -296,7 +290,9 @@ def run_configure_mode(
     if mode == "SetupProjectGuidance":
         from .guidance import setup_project_guidance
 
-        return setup_project_guidance(root, values, dry_run)
+        # interactive=True: skills are only installed after the user explicitly
+        # chooses them (never auto-installed without TTY confirmation).
+        return setup_project_guidance(root, values, dry_run, interactive=True)
 
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):
@@ -343,25 +339,30 @@ def _safe_read_json(path: Path) -> dict[str, Any]:
 
 def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
     """Run combined audit checks: env drift, quality gates, project profile."""
-    from ._shared import add_bucket_item, add_env_drift_findings, configure_result
+    from ._shared import (
+        add_bucket_item,
+        add_env_drift_findings,
+        client_tools_project_identifier_findings,
+        configure_result,
+    )
 
     result = configure_result("Audit", dry_run, write_enabled=False)
     add_env_drift_findings(root, result)
 
     # Check project profile (check file existence, not content — {} is valid but falsy)
-    if not (root / ".codex" / "project-profile.json").exists():
+    if not (root / ".template" / "project-profile.json").exists():
         add_bucket_item(
             result["findings"],
-            ".codex/project-profile.json",
+            ".template/project-profile.json",
             "profile.missing",
             "Project profile is missing. Run InitProjectProfile.",
             "error",
             "pre-start",
         )
-    if not (root / ".codex" / "project-profile.schema.json").exists():
+    if not (root / ".template" / "project-profile.schema.json").exists():
         add_bucket_item(
             result["findings"],
-            ".codex/project-profile.schema.json",
+            ".template/project-profile.schema.json",
             "schema.missing",
             "Project profile schema is missing. Run InitProjectProfile.",
             "error",
@@ -369,12 +370,12 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
         )
 
     # Check quality gates
-    policy = _safe_read_json(root / ".codex" / "delivery-policy.json")
+    policy = _safe_read_json(root / ".template" / "delivery-policy.json")
     gates = policy.get("quality", {}).get("gates", []) or policy.get("gates", [])
     if not gates:
         add_bucket_item(
             result["findings"],
-            ".codex/delivery-policy.json",
+            ".template/delivery-policy.json",
             "quality.gates.missing",
             "No quality gates are configured in delivery-policy.json.",
             "warning",
@@ -382,7 +383,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
         )
 
     # Check client tools
-    client_tools = _safe_read_json(root / ".codex" / "client-tools.local.json")
+    client_tools = _safe_read_json(root / ".template" / "client-tools.local.json")
     if client_tools:
         openproject = client_tools.get("openProject", {})
         if isinstance(openproject, dict):
@@ -394,7 +395,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                 if not activity_by_stage:
                     add_bucket_item(
                         result["findings"],
-                        ".codex/client-tools.local.json",
+                        ".template/client-tools.local.json",
                         "openProject.timeTelemetry.activityByStage",
                         "timeTelemetry is enabled but activityByStage is not configured.",
                         "warning",
@@ -408,7 +409,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                             if entry is None:
                                 add_bucket_item(
                                     result["findings"],
-                                    ".codex/client-tools.local.json",
+                                    ".template/client-tools.local.json",
                                     "openProject.timeTelemetry.activityFlow",
                                     f"Activity '{activity}' maps stage '{stage}' which has no entry in activityByStage.",
                                     "warning",
@@ -417,13 +418,17 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                             elif entry.get("activityName") != activity:
                                 add_bucket_item(
                                     result["findings"],
-                                    ".codex/client-tools.local.json",
+                                    ".template/client-tools.local.json",
                                     "openProject.timeTelemetry.activityFlow",
                                     f"Activity '{activity}' maps stage '{stage}' which has activityName '{entry.get('activityName')}' instead.",
                                     "warning",
                                     "audit",
                                 )
 
+    # Warn when openProject.projectIdentifier is missing/placeholder — the
+    # OpenProject MCP/ticket flow would 404 against /api/v3/projects/{id}.
+    for finding in client_tools_project_identifier_findings(root):
+        result["findings"].append(finding)
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -436,11 +441,11 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
     from ._shared import add_bucket_item, configure_result
 
     result = configure_result("AuditQualityGates", dry_run, write_enabled=False)
-    policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
+    policy = read_json(root / ".template" / "delivery-policy.json", optional=True)
     # Fallback to project-profile.json for quality gates (test compatibility)
     gates = policy.get("quality", {}).get("gates", []) or policy.get("gates", [])
     if not gates:
-        profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+        profile = read_json(root / ".template" / "project-profile.json", optional=True)
         gates = profile.get("quality", {}).get("gates", []) or profile.get("gates", [])
     required_gates: list[str] = []
     for gate in gates:
@@ -451,7 +456,7 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
             else:
                 add_bucket_item(
                     result["findings"],
-                    ".codex/delivery-policy.json",
+                    ".template/delivery-policy.json",
                     "gate.missing-id",
                     "A quality gate entry is missing an 'id' field.",
                     "warning",
@@ -468,6 +473,16 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to a legacy code page (cp1252) that cannot encode
+    # the ✓/✗/— glyphs used in CLI output, so a plain print() raises
+    # UnicodeEncodeError and crashes the whole command. Force UTF-8 output
+    # (best effort) so every CLI command stays robust on Windows.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
     if sys.version_info < (3, 11):
         print("Python 3.11+ is required.", file=sys.stderr)
         return 2
@@ -515,15 +530,22 @@ def _parse_cli(argv: list[str] | None):
     guide.add_argument("guide_args", nargs=argparse.REMAINDER)
     guide.set_defaults(func=_dispatch_guidance)
 
+    # stack-tests (local product tests: unit/integration/architecture)
+    # --dry-run accepts an optional value so both `--dry-run` and `--dry-run true`
+    # work (no dead REMAINDER swallowing positional args).
+    stack_tests = sub.add_parser("stack-tests")
+    stack_tests.add_argument("--dry-run", nargs="?", const="true", default="false")
+    stack_tests.set_defaults(func=_dispatch_stack_tests)
+
     # dev-flow
     flow = sub.add_parser("dev-flow")
     flow.add_argument("flow_args", nargs=argparse.REMAINDER)
     flow.set_defaults(func=_dispatch_dev_flow)
 
-    # memory-search
-    mem = sub.add_parser("memory-search")
+    # knowledge-search
+    mem = sub.add_parser("knowledge-search")
     mem.add_argument("mem_args", nargs=argparse.REMAINDER)
-    mem.set_defaults(func=_dispatch_memory_search)
+    mem.set_defaults(func=_dispatch_knowledge_search)
 
     # agent-eval
     ae = sub.add_parser("agent-eval")
@@ -536,6 +558,11 @@ def _parse_cli(argv: list[str] | None):
     full.add_argument("--root", default=str(REPO_ROOT))
     full.add_argument("full_args", nargs=argparse.REMAINDER)
     full.set_defaults(func=_dispatch_full_setup)
+
+    # gitea (PR reviewer automation: deterministic §11.5 reviewer assignment)
+    gitea = sub.add_parser("gitea")
+    gitea.add_argument("gitea_args", nargs=argparse.REMAINDER)
+    gitea.set_defaults(func=_dispatch_gitea)
 
     # configure (for run_configure_mode testing)
     cfg = sub.add_parser("configure")
@@ -552,7 +579,13 @@ def _parse_cli(argv: list[str] | None):
 def _fallback(args: Any) -> int:
     print(
         "Top-level commands: prereqs, environment-lab, tool-installer, "
-        "template-installer, guidance, dev-flow, full-setup, memory-search, configure",
+        "template-installer, guidance, stack-tests, dev-flow, full-setup, "
+        "knowledge-search, configure",
+        file=sys.stderr,
+    )
+    print(
+        "Note: `environment-lab setup-lab` and `full-setup` are aliases "
+        "(both run the 4-stage setup); use `full-setup --dry-run true` to preview.",
         file=sys.stderr,
     )
     return 1
@@ -598,16 +631,39 @@ def _dispatch_guidance(args: Any) -> int:
     return run_guidance(getattr(args, "guide_args", []))
 
 
+def _dispatch_stack_tests(args: Any) -> int:
+    from .stack_tests import print_result, run_stack_tests
+
+    root = Path(getattr(args, "root", REPO_ROOT))
+    # Accepts `--dry-run`, `--dry-run true`, or `--dry-run false`.
+    dry_run = str(getattr(args, "dry_run", "false")).lower() in ("true", "1", "yes")
+    result = run_stack_tests(root, dry_run)
+    print_result(result, dry_run)
+    return 0 if result.get("valid") else 1
+
+
 def _dispatch_dev_flow(args: Any) -> int:
     from .dev_flow import run_dev_flow
 
     return run_dev_flow(getattr(args, "flow_args", []))
 
 
-def _dispatch_memory_search(args: Any) -> int:
-    from .memory_search import run_memory_search
+def _dispatch_gitea(args: Any) -> int:
+    raw = getattr(args, "gitea_args", [])
+    # gitea labels — deterministic idempotent label reconciliation (see gitea_labels.py)
+    if raw and raw[0] == "labels":
+        from .gitea_labels import labels_cli
 
-    return run_memory_search(getattr(args, "mem_args", []))
+        return labels_cli(raw)
+    from .gitea_reviewers import request_reviewers_cli
+
+    return request_reviewers_cli(raw)
+
+
+def _dispatch_knowledge_search(args: Any) -> int:
+    from .knowledge_search import run_knowledge_search
+
+    return run_knowledge_search(getattr(args, "mem_args", []))
 
 
 def _dispatch_agent_eval(args: Any) -> int:

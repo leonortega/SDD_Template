@@ -27,7 +27,7 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("environment-lab", stderr.getvalue())
         self.assertIn("dev-flow", stderr.getvalue())
         self.assertIn("guidance", stderr.getvalue())
-        self.assertIn("memory-search", stderr.getvalue())
+        self.assertIn("knowledge-search", stderr.getvalue())
         self.assertIn("tool-installer", stderr.getvalue())
         self.assertIn("template-installer", stderr.getvalue())
         self.assertIn("prereqs", stderr.getvalue())
@@ -76,13 +76,43 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("detect-adversarial-trigger", output)
         self.assertIn("audit-skill-contracts", output)
 
-    def test_memory_search_no_args(self) -> None:
-        """memory-search with no args shows usage."""
+    def test_knowledge_search_no_args(self) -> None:
+        """knowledge-search with no args shows usage."""
         stderr = io.StringIO()
         with redirect_stderr(stderr):
-            rc = cli.main(["memory-search"])
+            rc = cli.main(["knowledge-search"])
         self.assertEqual(1, rc)
         self.assertIn("Usage", stderr.getvalue())
+
+    def test_knowledge_search_classify_dispatches(self) -> None:
+        """knowledge-search classify returns candidate file paths."""
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = cli.main(
+                [
+                    "knowledge-search",
+                    "classify",
+                    "--task",
+                    "Fixed Docker build timeout",
+                    "--changed-files",
+                    "docker/Dockerfile,ci/build.sh",
+                    "--test-results",
+                    "1 failed: timeout",
+                ]
+            )
+        self.assertEqual(0, rc)
+        result = json.loads(stdout.getvalue())
+        self.assertFalse(result["noChanges"])
+        self.assertTrue(result["candidates"])
+        self.assertIn("knowledge/errors", result["markers"]["knowledge"][0])
+
+    def test_knowledge_search_classify_requires_input(self) -> None:
+        """knowledge-search classify without task/files shows usage."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["knowledge-search", "classify"])
+        self.assertEqual(1, rc)
+        self.assertIn("Usage: knowledge-search classify", stderr.getvalue())
 
     def test_tool_installer_no_args(self) -> None:
         """tool-installer with no args shows available subcommands."""
@@ -91,8 +121,9 @@ class TopLevelDispatchTests(unittest.TestCase):
             rc = cli.main(["tool-installer"])
         self.assertEqual(1, rc)
         output = stderr.getvalue()
-        self.assertIn("ensure-codebase-memory", output)
+        self.assertIn("install-playwright-mcp", output)
         self.assertIn("ensure-quality-tools", output)
+        self.assertIn("ensure-stack-toolchain", output)
         self.assertIn("install-lefthook", output)
 
     def test_template_installer_no_args(self) -> None:
@@ -104,6 +135,127 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("Usage", stderr.getvalue())
 
 
+class PrereqsUnitTests(unittest.TestCase):
+    """Unit tests for npm/npx resolution and the npm PATH-repair flow."""
+
+    def test_native_command_resolves_cmd_on_windows(self) -> None:
+        """native_command uses the explicit .cmd name on Windows, bare name elsewhere."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        with patch.object(prereqs.sys, "platform", "win32"):
+            self.assertEqual(["npm.cmd"], prereqs.native_command("npm"))
+            self.assertEqual(["npx.cmd"], prereqs.native_command("npx"))
+        with patch.object(prereqs.sys, "platform", "linux"):
+            self.assertEqual(["npm"], prereqs.native_command("npm"))
+
+    def test_install_node_repairs_npm_path_when_node_present(self) -> None:
+        """install_node adds the npm.cmd folder to PATH when node exists but npm is missing."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        ok_node = {
+            "command": "check-node",
+            "valid": True,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "10.8.1\n",
+        }
+        # The candidate path only exists on Windows; CI (Linux container) must
+        # not fail on the existence probe. Patching Path.exists keeps the
+        # repair flow deterministic on every platform.
+        with patch.object(Path, "exists", return_value=True), \
+             patch.object(prereqs, "check_node", side_effect=[found_node, ok_node]), \
+             patch.object(
+                 prereqs,
+                 "_npm_candidates",
+                 return_value=[Path("C:/Program Files/nodejs/npm.cmd")],
+             ) as mock_cands, \
+             patch.object(prereqs, "_add_dir_to_user_path", return_value=True) as mock_add:
+            result = prereqs.install_node()
+
+        self.assertTrue(result["valid"])
+        mock_cands.assert_called_once()
+        # Mirror the exact expression install_node computes so the assertion is
+        # platform-agnostic (Windows: backslashes, Linux CI: forward slashes).
+        mock_add.assert_called_once_with(
+            str(Path("C:/Program Files/nodejs/npm.cmd").parent)
+        )
+        self.assertIn("added to the user PATH", result["message"])
+
+    def test_install_node_returns_early_when_all_valid(self) -> None:
+        """install_node returns the check result unchanged when node and npm are both fine."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        ok_node = {
+            "command": "check-node",
+            "valid": True,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "10.8.1\n",
+        }
+        with patch.object(prereqs, "check_node", return_value=ok_node):
+            result = prereqs.install_node()
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(ok_node, result)
+
+    def test_install_node_raises_precise_error_when_repair_fails(self) -> None:
+        """install_node reports node-found-but-npm-missing precisely when no repair works."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        with patch.object(prereqs, "check_node", return_value=found_node), \
+             patch.object(prereqs, "_npm_candidates", return_value=[]):
+            with self.assertRaises(prereqs.CliError) as ctx:
+                prereqs.install_node()
+
+        message = str(ctx.exception)
+        self.assertIn("v26.4.0", message)
+        self.assertIn("npm was not found on PATH", message)
+
+    def test_install_node_raises_precise_error_when_path_add_fails(self) -> None:
+        """install_node falls through candidates and raises when the PATH add fails."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        with patch.object(prereqs, "check_node", return_value=found_node), \
+             patch.object(
+                 prereqs,
+                 "_npm_candidates",
+                 return_value=[Path("C:/Program Files/nodejs/npm.cmd")],
+             ), \
+             patch.object(prereqs, "_add_dir_to_user_path", return_value=False):
+            with self.assertRaises(prereqs.CliError) as ctx:
+                prereqs.install_node()
+
+        message = str(ctx.exception)
+        self.assertIn("v26.4.0", message)
+        self.assertIn("npm was not found on PATH", message)
+
+
 class DevFlowDispatchTests(unittest.TestCase):
     """Test specific dev-flow subcommand dispatch."""
 
@@ -111,8 +263,8 @@ class DevFlowDispatchTests(unittest.TestCase):
         """dev-flow validate-commit-message works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.json").write_text(
                 json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}),
                 encoding="utf-8",
             )
@@ -192,23 +344,154 @@ class DevFlowDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
-            lock = root / ".codex" / "delivery-context.local.json"
+            lock = root / ".template" / "delivery-context.local.json"
             self.assertTrue(lock.exists())
             data = json.loads(lock.read_text(encoding="utf-8"))
             self.assertEqual("ABC-1", data["ticketKey"])
+
+    def test_validate_parallel_dry_run_no_enabled_gate(self) -> None:
+        """validate-parallel-dry-run passes without a parallelDelivery.enabled flag.
+
+        Parallel delivery is now triggered by the AI when the user asks to
+        implement more than one ticket — there is no config flag gate.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = {
+                "tickets": [
+                    {"ticketKey": "ABC-1", "branch": "feat/a", "worktreePath": "wt/a"},
+                    {"ticketKey": "ABC-2", "branch": "feat/b", "worktreePath": "wt/b"},
+                ],
+                "maxActiveTickets": 2,
+                "deploymentLanePolicy": "serialized",
+            }
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "validate-parallel-dry-run",
+                        "--root",
+                        str(root),
+                        "--input-json",
+                        json.dumps(plan),
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual(2, result["activeTicketCount"])
+
+    def test_validate_parallel_dry_run_still_rejects_capacity(self) -> None:
+        """Capacity/isolation constraints still block (only the enabled gate is gone)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = {
+                "tickets": [
+                    {"ticketKey": "ABC-1", "branch": "feat/a", "worktreePath": "wt/a"},
+                    {"ticketKey": "ABC-2", "branch": "feat/b", "worktreePath": "wt/b"},
+                    {"ticketKey": "ABC-3", "branch": "feat/c", "worktreePath": "wt/c"},
+                ],
+                "maxActiveTickets": 2,
+                "deploymentLanePolicy": "serialized",
+            }
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "validate-parallel-dry-run",
+                        "--root",
+                        str(root),
+                        "--input-json",
+                        json.dumps(plan),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            self.assertTrue(
+                any("maxActiveTickets" in str(e) for e in result["errors"])
+            )
+
+    def test_telemetry_upsert_dry_run_dispatch(self) -> None:
+        """dev-flow telemetry-upsert --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "telemetry-upsert",
+                        "--root",
+                        str(root),
+                        "--ticket-key",
+                        "ABC-1",
+                        "--workflow-stage",
+                        "dev-flow-verify-change",
+                        "--agent-role",
+                        "verify",
+                        "--started-utc",
+                        "2026-08-07T10:00:00Z",
+                        "--finished-utc",
+                        "2026-08-07T11:00:00Z",
+                        "--outcome",
+                        "PASS",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("dry-run", result["action"])
+
+    def test_append_telemetry_dispatch(self) -> None:
+        """dev-flow append-telemetry works (JSONL fallback)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "append-telemetry",
+                        "--root",
+                        str(root),
+                        "--ticket-key",
+                        "ABC-1",
+                        "--workflow-stage",
+                        "qa-gate",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("appended", result["action"])
+            self.assertTrue(
+                (root / ".template" / "agent-telemetry.local.jsonl").exists()
+            )
 
 
 class GuidanceDispatchTests(unittest.TestCase):
     """Test guidance subcommand dispatch."""
 
     def test_discover_dry_run(self) -> None:
-        """guidance discover --dry-run true works."""
+        """guidance discover --dry-run true works (internet-only, no results in dry-run)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            skills = root / ".codex" / "skills"
-            skills.mkdir(parents=True)
-            (skills / "manifest.json").write_text(
-                json.dumps({"categories": {"test": {"skills": ["demo/SKILL.md"]}}}),
+            codex = root / ".template"
+            codex.mkdir(parents=True)
+            # Stack values come from the profile; dry-run never searches the internet.
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({
+                    "stack": {
+                        "frontend": {"applies": True, "value": "react"},
+                        "backend": {"applies": False, "value": ""},
+                        "database": {"applies": False, "value": ""},
+                    }
+                }),
                 encoding="utf-8",
             )
             stdout = io.StringIO()
@@ -226,7 +509,58 @@ class GuidanceDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
-            self.assertEqual(1, result["skillCount"])
+            self.assertIn("react", result["stackTags"])
+            # Dry-run: internet search produces no skills (never reads local manifest).
+            self.assertEqual(0, result["skillCount"])
+            self.assertEqual([], result["foundSkills"])
+
+
+class StackTestsDispatchTests(unittest.TestCase):
+    """Test stack-tests subcommand dispatch."""
+
+    def test_stack_tests_dry_run(self) -> None:
+        """stack-tests --dry-run true works with no stack (skips cleanly)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                # --root is a top-level option: it must precede the subcommand.
+                rc = cli.main(
+                    [
+                        "--root",
+                        str(root),
+                        "stack-tests",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            self.assertIn("Stack tests: OK", stdout.getvalue())
+
+    def test_stack_tests_dry_run_with_profile(self) -> None:
+        """stack-tests --dry-run true reports commands for configured frameworks."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir(parents=True)
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "--root",
+                        str(root),
+                        "stack-tests",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            self.assertIn("Stack tests: OK", stdout.getvalue())
+            self.assertIn("pytest", stdout.getvalue())
 
 
 class EnvironmentLabDispatchTests(unittest.TestCase):
@@ -257,11 +591,56 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         # Should NOT have delegated to full-setup
         mock_full.assert_not_called()
 
-    def test_init_local_files_creates_memory_seeds(self) -> None:
+    def test_prune_docker_leftovers_dispatches(self) -> None:
+        """environment-lab prune-docker-leftovers calls prune_docker_leftovers."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_docker_leftovers",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-docker-leftovers", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
+    def test_prune_kind_images_dispatches(self) -> None:
+        """environment-lab prune-kind-images calls prune_kind_images."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_kind_images",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-kind-images", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
+    def test_prune_scaffold_dispatches(self) -> None:
+        """environment-lab prune-scaffold calls prune_scaffold_shapes."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_scaffold_shapes",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-scaffold", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
+    def test_init_local_files_creates_knowledge_seed(self) -> None:
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
@@ -292,7 +671,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
-            self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
+            self.assertTrue((root / "knowledge" / "README.md").exists())
 
     def test_init_project_profile(self) -> None:
         """environment-lab init-project-profile works."""
@@ -309,7 +688,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(0, rc)
-            self.assertTrue((root / ".codex" / "project-profile.example.json").exists())
+            self.assertTrue((root / ".template" / "project-profile.example.json").exists())
 
     def test_init_quality_templates(self) -> None:
         """environment-lab init-quality-templates works."""
@@ -362,24 +741,28 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
                 )
             self.assertEqual(0, rc)  # Dry-run skips HTTP checks
 
+    def test_environment_lab_help_lists_new_modes(self) -> None:
+        """environment-lab help advertises the 4 newly registered modes."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["environment-lab"])
+        self.assertEqual(1, rc)
+        output = stderr.getvalue()
+        self.assertIn("validate-app-config", output)
+        self.assertIn("validate-docker-desktop", output)
+        self.assertIn("provision-nexus-repositories", output)
+        self.assertIn("provision-gitea-secrets", output)
 
-class ToolInstallerDispatchTests(unittest.TestCase):
-    """Test tool-installer subcommand dispatch."""
-
-    def test_ensure_codebase_memory_dry_run(self) -> None:
-        """tool-installer ensure-codebase-memory --dry-run true works."""
+    def test_validate_app_config_dry_run(self) -> None:
+        """environment-lab validate-app-config --dry-run true works without infra files."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            # Need tools/codebase_memory_mcp/mcp_cap_shim.py for codebase memory
-            shim = root / "tools" / "codebase_memory_mcp"
-            shim.mkdir(parents=True)
-            (shim / "mcp_cap_shim.py").write_text("# shim", encoding="utf-8")
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 rc = cli.main(
                     [
-                        "tool-installer",
-                        "ensure-codebase-memory",
+                        "environment-lab",
+                        "validate-app-config",
                         "--root",
                         str(root),
                         "--dry-run",
@@ -389,6 +772,286 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ValidateAppConfig", result["mode"])
+
+    def test_validate_app_config_valid_apps(self) -> None:
+        """validate-app-config validates apps.json and checks every Dockerfile."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deployment = root / "infra" / "deployment"
+            deployment.mkdir(parents=True)
+            (deployment / "apps.schema.json").write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "required": ["version", "apps"],
+                        "properties": {
+                            "version": {"type": "integer"},
+                            "apps": {"type": "array"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (deployment / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "apps": [
+                            {
+                                "appId": "frontend",
+                                "projectPath": "frontend",
+                                "role": "web",
+                                "healthPath": "/health",
+                                "deployOrder": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "frontend").mkdir(parents=True)
+            (root / "frontend" / "Dockerfile").write_text(
+                "FROM nginx\n", encoding="utf-8"
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    ["environment-lab", "validate-app-config", "--root", str(root)]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+
+    def test_validate_app_config_missing_dockerfile(self) -> None:
+        """validate-app-config fails when an app's Dockerfile is missing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deployment = root / "infra" / "deployment"
+            deployment.mkdir(parents=True)
+            (deployment / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "apps": [
+                            {
+                                "appId": "backend",
+                                "projectPath": "backend",
+                                "role": "api",
+                                "healthPath": "/health",
+                                "deployOrder": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    ["environment-lab", "validate-app-config", "--root", str(root)]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            self.assertTrue(any("Dockerfile not found" in str(item) for item in result["findings"]))
+
+    def _write_apps_config(self, root: Path, apps: list[dict]) -> None:
+        """Write a minimal apps.json + project profile into a temp root."""
+        deployment = root / "infra" / "deployment"
+        deployment.mkdir(parents=True)
+        (deployment / "apps.json").write_text(
+            json.dumps({"version": 1, "apps": apps}), encoding="utf-8"
+        )
+        for app in apps:
+            docker = root / app.get("projectPath", app["appId"]) / "Dockerfile"
+            docker.parent.mkdir(parents=True, exist_ok=True)
+            docker.write_text("FROM scratch\n", encoding="utf-8")
+        template = root / ".template"
+        template.mkdir(parents=True, exist_ok=True)
+        (template / "project-profile.json").write_text(
+            json.dumps({"schemaVersion": 1}), encoding="utf-8"
+        )
+        (template / "project-profile.local.json").write_text(
+            json.dumps({"projectName": "dellop"}), encoding="utf-8"
+        )
+
+    def _run_validate_app_config(self, root: Path) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = cli.main(
+                ["environment-lab", "validate-app-config", "--root", str(root)]
+            )
+        return rc, json.loads(stdout.getvalue())
+
+    def test_validate_app_config_enforces_project_name_prefix(self) -> None:
+        """Project-name prefix rule: unprefixed appIds fail the gate."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "web",
+                        "projectPath": "apps/web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    }
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(1, rc)
+            self.assertFalse(result["valid"])
+            keys = {item["key"] for item in result["findings"]}
+            self.assertIn("appId.project-prefix", keys)
+
+    def test_validate_app_config_accepts_prefixed_app_ids(self) -> None:
+        """Prefixed appIds (dellop-web/dellop-user-api/dellop-db) pass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "dellop-web",
+                        "projectPath": "apps/dellop-web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    },
+                    {
+                        "appId": "dellop-user-api",
+                        "projectPath": "apps/dellop-user-api",
+                        "role": "api",
+                        "healthPath": "/health",
+                        "deployOrder": 2,
+                    },
+                    {
+                        "appId": "dellop-db",
+                        "projectPath": "apps/dellop-db",
+                        "role": "database",
+                        "healthPath": "/health",
+                        "deployOrder": 3,
+                    },
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(0, rc)
+            self.assertTrue(result["valid"])
+
+    def test_validate_app_config_exempts_db_bootstrap(self) -> None:
+        """The fixed infra bootstrap job (db-bootstrap) is exempt from the prefix."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "db-bootstrap",
+                        "projectPath": "apps/db-bootstrap",
+                        "role": "job",
+                        "kind": "job",
+                        "healthPath": "/health",
+                        "deployOrder": 0,
+                    },
+                    {
+                        "appId": "dellop-web",
+                        "projectPath": "apps/dellop-web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    },
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(0, rc)
+            self.assertTrue(result["valid"])
+
+    def test_validate_docker_desktop_dry_run(self) -> None:
+        """environment-lab validate-docker-desktop --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "validate-docker-desktop",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ValidateDockerDesktop", result["mode"])
+
+    def test_provision_nexus_repositories_dry_run(self) -> None:
+        """environment-lab provision-nexus-repositories --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "provision-nexus-repositories",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ProvisionNexusRepositories", result["mode"])
+            self.assertTrue(
+                any("docker-hosted" in str(item) for item in result["actions"])
+            )
+
+    def test_provision_gitea_secrets_dry_run(self) -> None:
+        """environment-lab provision-gitea-secrets --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "provision-gitea-secrets",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ProvisionGiteaSecrets", result["mode"])
+            self.assertTrue(
+                any("KUBECONFIG" in str(item) for item in result["actions"])
+            )
+
+    def test_new_modes_reject_unknown_subcommand_fallback(self) -> None:
+        """Unknown environment-lab subcommand still errors (no new-mode regression)."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["environment-lab", "bogus-mode-xyz"])
+        self.assertEqual(1, rc)
+        self.assertIn("Unknown environment-lab subcommand: bogus-mode-xyz", stderr.getvalue())
+
+
+class ToolInstallerDispatchTests(unittest.TestCase):
+    """Test tool-installer subcommand dispatch."""
 
     def test_ensure_quality_tools_dry_run(self) -> None:
         """tool-installer ensure-quality-tools --dry-run true works."""
@@ -411,6 +1074,76 @@ class ToolInstallerDispatchTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(0, rc)  # Dry-run skips external tool checks
+
+    def test_coverage_probe_commands_follow_stack_frameworks(self) -> None:
+        """ensure-quality-tools coverage probe is stack-driven, never hardcoded."""
+        from tools.sdd_cli.tool_installer import _coverage_probe_commands
+
+        # No stack configured → nothing probed (never assume a stack).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertEqual([], probes)
+            self.assertIn("no stack.testFrameworks", reason)
+
+            # pytest stack → only pytest probed (no dotnet/jest fallback).
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
+                encoding="utf-8",
+            )
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["pytest"], [name for _, name in probes])
+
+            # .NET variants normalize to the single dotnet probe.
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"testFrameworks": ["xunit", "nunit"]}}),
+                encoding="utf-8",
+            )
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["dotnet"], [name for _, name in probes])
+
+            # Mixed stack → deduplicated probes in profile order.
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"testFrameworks": ["jest", "pytest"]}}),
+                encoding="utf-8",
+            )
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["jest", "pytest"], [name for _, name in probes])
+
+            # Configured-but-unmapped framework → nothing probed + reason.
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"testFrameworks": ["golang"]}}),
+                encoding="utf-8",
+            )
+            probes, reason = _coverage_probe_commands(root)
+            self.assertEqual([], probes)
+            self.assertIn("golang", reason)
+
+    def test_ensure_stack_toolchain_dry_run_dispatch(self) -> None:
+        """tool-installer ensure-stack-toolchain --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "ensure-stack-toolchain",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("EnsureStackToolchain", result["mode"])
 
     def test_install_lefthook_dry_run(self) -> None:
         """tool-installer install-lefthook --dry-run true works."""
@@ -500,7 +1233,7 @@ class ToolInstallerDispatchTests(unittest.TestCase):
         """tool-installer list-skills --dry-run true with source config works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "skill-sources.json").write_text(
                 json.dumps({
@@ -535,10 +1268,10 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertIn("skills", result)
 
     def test_list_skills_uses_example_config_when_no_local(self) -> None:
-        """list-skills falls back to .codex/skill-sources.example.json."""
+        """list-skills falls back to .template/skill-sources.example.json."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             # Only create the example file, not the local one
             (codex / "skill-sources.example.json").write_text(
@@ -575,7 +1308,7 @@ class ToolInstallerDispatchTests(unittest.TestCase):
         """tool-installer install-skill --source works with dry-run."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "skill-sources.json").write_text(
                 json.dumps({
@@ -614,24 +1347,229 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertEqual("my-skill", result["skillName"])
 
 
-class MemorySearchDispatchTests(unittest.TestCase):
-    """Test memory-search subcommand dispatch."""
+    def test_install_skill_nested_dirs_do_not_duplicate_ref_param(self) -> None:
+        """install-skill recurses into nested dirs whose entry URLs already carry ?ref=.
 
-    def test_memory_search_list_topics(self) -> None:
-        """memory-search search --list-topics works."""
+        GitHub echoes the ?ref= query inside directory entry URLs. The installer
+        must append the ref without producing a malformed "?ref=...?ref=..."
+        query (which 404s) when a skill has nested subdirectories.
+        """
+        from unittest.mock import patch
+
+        from tools.sdd_cli.tool_installer import install_skill_from_github
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            memory = root / ".codex" / "memory"
-            memory.mkdir(parents=True)
-            (memory / "failure-patterns.md").write_text(
-                "## Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-07-13\n\nDocker failed.\n",
+            requested: list[str] = []
+
+            top_url = (
+                "https://api.github.com/repos/owner/repo/contents/skills/demo?ref=main"
+            )
+            # GitHub echoes ?ref=main inside the dir entry URL.
+            sub_url = (
+                "https://api.github.com/repos/owner/repo/contents/skills/demo/sub?ref=main"
+            )
+            dl_top = (
+                "https://raw.githubusercontent.com/owner/repo/main/skills/demo/SKILL.md"
+            )
+            dl_sub = (
+                "https://raw.githubusercontent.com/owner/repo/main/skills/demo/sub/extra.md"
+            )
+            payloads = {
+                top_url: json.dumps(
+                    [
+                        {
+                            "type": "file",
+                            "name": "SKILL.md",
+                            "download_url": dl_top,
+                        },
+                        {"type": "dir", "name": "sub", "url": sub_url},
+                    ]
+                ),
+                sub_url: json.dumps(
+                    [
+                        {
+                            "type": "file",
+                            "name": "extra.md",
+                            "download_url": dl_sub,
+                        }
+                    ]
+                ),
+            }
+
+            class FakeResp:
+                def __init__(self, data: bytes) -> None:
+                    self._data = data
+
+                def read(self) -> bytes:
+                    return self._data
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+            def fake_urlopen(req, timeout: int = 30):
+                url = req.full_url if hasattr(req, "full_url") else req
+                requested.append(url)
+                key = url.split("&ref=")[0] if url.startswith("https://api.github.com") else url
+                if key in payloads:
+                    return FakeResp(payloads[key].encode("utf-8"))
+                return FakeResp(b"file-content")
+
+            with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                result = install_skill_from_github(
+                    root, "owner/repo", "skills/demo", "demo", branch="main"
+                )
+
+            self.assertTrue(result["valid"])
+            # The original bug produced a doubled ?ref=...?ref= query on the
+            # nested dir listing; no requested URL may contain it.
+            self.assertFalse(any("?ref=main?ref" in u for u in requested))
+            # Both the top-level and nested files were installed.
+            self.assertTrue(
+                (root / ".agents" / "skills" / "demo" / "SKILL.md").exists()
+            )
+            self.assertTrue(
+                (root / ".agents" / "skills" / "demo" / "sub" / "extra.md").exists()
+            )
+
+    def test_ensure_mcp_servers_dry_run(self) -> None:
+        """tool-installer ensure-mcp-servers --dry-run true works without side effects."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with patch("pathlib.Path.home", return_value=root / "home"), patch(
+                "os.environ", {"APPDATA": str(root / "appdata")}
+            ), redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "ensure-mcp-servers",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("EnsureMCPServers", result["mode"])
+
+    def test_ensure_mcp_servers_prune_junk_flag(self) -> None:
+        """--prune-junk false is accepted and disables junk pruning."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.tool_installer import ensure_mcp_servers
+
+        dummy = {"valid": True, "actions": [], "findings": []}
+        pruned: list[bool] = []
+
+        def fake_prune(root, result, dry_run):
+            pruned.append(dry_run)
+
+        with patch(
+            "tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_grafana_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_k8s_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_gitea_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_openproject_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer._prune_junk_mcp_servers", side_effect=fake_prune
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    rc = cli.main(
+                        [
+                            "tool-installer",
+                            "ensure-mcp-servers",
+                            "--root",
+                            tmp,
+                            "--dry-run",
+                            "true",
+                            "--prune-junk",
+                            "false",
+                        ]
+                    )
+                self.assertEqual(0, rc)
+        self.assertEqual([], pruned)  # pruning disabled by --prune-junk false
+
+    def test_ensure_mcp_servers_checks_all_mcp_targets(self) -> None:
+        """ensure_mcp_servers runs every install_*_mcp installer."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.tool_installer import ensure_mcp_servers
+
+        dummy = {"valid": True, "actions": [], "findings": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch("pathlib.Path.home", return_value=root / "home"), patch(
+                "os.environ", {"APPDATA": str(root / "appdata")}
+            ), patch(
+                "tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy
+            ) as pw, patch(
+                "tools.sdd_cli.tool_installer.install_grafana_mcp", return_value=dummy
+            ) as gf, patch(
+                "tools.sdd_cli.tool_installer.install_k8s_mcp", return_value=dummy
+            ) as k8s, patch(
+                "tools.sdd_cli.tool_installer.install_gitea_mcp", return_value=dummy
+            ) as gt, patch(
+                "tools.sdd_cli.tool_installer.install_openproject_mcp", return_value=dummy
+            ) as op:
+                result = ensure_mcp_servers(root, dry_run=True)
+
+            self.assertTrue(result["valid"])
+            pw.assert_called_once()
+            gf.assert_called_once()
+            k8s.assert_called_once()
+            gt.assert_called_once()
+            op.assert_called_once()
+
+    def test_stack_tests_bare_dry_run_flag(self) -> None:
+        """stack-tests --dry-run (no value) works like --dry-run true."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "--root",
+                        str(root),
+                        "stack-tests",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            self.assertIn("Stack tests: OK", stdout.getvalue())
+
+
+class MemorySearchDispatchTests(unittest.TestCase):
+    """Test knowledge-search subcommand dispatch."""
+
+    def test_knowledge_search_list_topics(self) -> None:
+        """knowledge-search search --list-topics works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-07-13\n\nDocker failed.\n",
                 encoding="utf-8",
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 rc = cli.main(
                     [
-                        "memory-search",
+                        "knowledge-search",
                         "search",
                         "--root",
                         str(root),
@@ -670,6 +1608,208 @@ class ValidateGiteaRunnerDispatchTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(0, rc)
+
+
+class AssignAppPortsDispatchTests(unittest.TestCase):
+    """Test the assign-app-ports environment-lab subcommand end-to-end."""
+
+    @staticmethod
+    def _seed_ports(root: Path) -> None:
+        """Copy the canonical ports.json into a temp root (infra layout)."""
+        import shutil
+
+        from tools.sdd_cli._shared import REPO_ROOT
+
+        dst = root / "infra" / "deployment" / "ports.json"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / "infra" / "deployment" / "ports.json", dst)
+
+    @staticmethod
+    def _first_free(pool: range, used: set[int]) -> int:
+        """First port in the block not already taken."""
+        return next(p for p in pool if p not in used)
+
+    def test_assign_app_ports_dry_run_dispatches(self) -> None:
+        """Dry-run allocates ports without persisting anything."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "frontend-admin",
+                        "--role",
+                        "web",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("frontend-admin", result["app"])
+            self.assertEqual("web", result["role"])
+            self.assertEqual({"dev", "qa", "prod"}, set(result["allocations"]))
+            # Nothing persisted in dry-run mode.
+            data = json.loads(
+                (root / "infra" / "deployment" / "ports.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertNotIn("frontend-admin", data["environments"]["dev"])
+            self.assertFalse((root / "infra" / "k8s" / "kind-config.yaml").exists())
+
+    def test_assign_app_ports_writes_ports_and_artifacts(self) -> None:
+        """A real run persists ports.json and regenerates kind artifacts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            ports_path = root / "infra" / "deployment" / "ports.json"
+            fixture = json.loads(ports_path.read_text(encoding="utf-8"))
+            # Expected allocation: first free web host slots (dev, qa, prod in
+            # order) and the first free dev nodePort - derived from the seeded
+            # fixture so future canonical ports.json edits don't break this test.
+            used_host = {
+                cfg["hostPort"]
+                for apps in fixture["environments"].values()
+                for cfg in apps.values()
+            }
+            free_host = iter(p for p in range(8081, 8091) if p not in used_host)
+            expected_host = {env: next(free_host) for env in ("dev", "qa", "prod")}
+            used_dev_node = {
+                cfg["nodePort"] for cfg in fixture["environments"]["dev"].values()
+            }
+            expected_dev_node = self._first_free(range(30080, 30090), used_dev_node)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "frontend-admin",
+                        "--role",
+                        "web",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+
+            data = json.loads(ports_path.read_text(encoding="utf-8"))
+            for env in ("dev", "qa", "prod"):
+                entry = data["environments"][env]["frontend-admin"]
+                self.assertEqual("web", entry["role"])
+                self.assertEqual(expected_host[env], entry["hostPort"])
+                self.assertLess(entry["hostPort"], 8091)
+            dev_entry = data["environments"]["dev"]["frontend-admin"]
+            self.assertEqual(expected_dev_node, dev_entry["nodePort"])
+
+            kind = (root / "infra" / "k8s" / "kind-config.yaml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("frontend-admin DEV (web)", kind)
+            self.assertIn(f"hostPort: {expected_host['dev']}", kind)
+            for env in ("dev", "qa", "prod"):
+                patch = root / "infra" / "k8s" / "overlays" / env / "service-patch.yaml"
+                self.assertTrue(patch.exists())
+                self.assertIn("frontend-admin", patch.read_text(encoding="utf-8"))
+
+    def test_assign_app_ports_is_idempotent(self) -> None:
+        """Re-running for an existing app keeps the same allocation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            args = [
+                "environment-lab",
+                "assign-app-ports",
+                "--app",
+                "frontend-admin",
+                "--role",
+                "web",
+                "--root",
+                str(root),
+            ]
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc1 = cli.main(args)
+            first = json.loads(stdout.getvalue())
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc2 = cli.main(args)
+            second = json.loads(stdout.getvalue())
+            self.assertEqual(0, rc1)
+            self.assertEqual(0, rc2)
+            self.assertTrue(second["valid"])
+            # Same ports on re-run (the idempotent path re-reads the stored
+            # entry, which additionally carries the role key - compare ports).
+            def ports(allocs: dict) -> dict:
+                return {
+                    env: {k: v for k, v in cfg.items() if k != "role"}
+                    for env, cfg in allocs.items()
+                }
+
+            self.assertEqual(ports(first["allocations"]), ports(second["allocations"]))
+
+    def test_assign_app_ports_missing_args_fails(self) -> None:
+        """Missing --app/--role returns a validation error (rc 1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            messages = " ".join(
+                finding.get("message", "") for finding in result["findings"]
+            )
+            self.assertIn("--app", messages)
+            self.assertIn("--role", messages)
+
+    def test_assign_app_ports_unknown_role_fails(self) -> None:
+        """Roles without a defined range are rejected (rc 1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "worker",
+                        "--role",
+                        "worker",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            messages = " ".join(
+                finding.get("message", "") for finding in result["findings"]
+            )
+            self.assertIn("worker", messages)
 
 
 if __name__ == "__main__":

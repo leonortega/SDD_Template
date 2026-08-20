@@ -1,0 +1,32 @@
+{
+  "$schema": "./ports.schema.json",
+  "version": 1,
+  "registry": "host.docker.internal:5001",
+  "appPorts": {},
+  "environments": {
+    "dev": {
+      "database": {
+        "hostPort": 5432,
+        "nodePort": 30700,
+        "role": "database",
+        "serviceName": "db"
+      }
+    },
+    "qa": {
+      "database": {
+        "hostPort": 5433,
+        "nodePort": 31700,
+        "role": "database",
+        "serviceName": "db"
+      }
+    },
+    "prod": {
+      "database": {
+        "hostPort": 5434,
+        "nodePort": 32700,
+        "role": "database",
+        "serviceName": "db"
+      }
+    }
+  }
+}

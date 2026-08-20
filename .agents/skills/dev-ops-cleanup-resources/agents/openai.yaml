@@ -1,0 +1,4 @@
+interface:
+  display_name: Clean Up Temporary Resources
+  short_description: Remove leftover Docker containers/images/volumes and temp files after a ticket closes.
+  default_prompt: Use $dev-ops-cleanup-resources to clean up temporary test resources from the closed ticket.

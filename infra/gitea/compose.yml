@@ -37,12 +37,49 @@ services:
     networks:
       - gitea
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  gitea-mcp:
+    # ONE shared Gitea MCP HTTP server for every MCP client (VS Code, Cline,
+    # CLI tools). Clients connect to http://localhost:8123/mcp with a Bearer
+    # header instead of each spawning their own `docker run` stdio container,
+    # so at most one gitea-mcp container exists (idempotent by design).
+    # GITEA_ACCESS_TOKEN is read from ./mcp.env (env_file), which the
+    # install-gitea-mcp step keeps in sync with client-tools.local.json.
+    image: docker.gitea.com/gitea-mcp-server
+    container_name: agentic-gitea-mcp
+    depends_on:
+      gitea:
+        condition: service_healthy
+    env_file:
+      - ./mcp.env
+    command:
+      - /app/gitea-mcp
+      - -t
+      - http
+      - -p
+      - "8080"
+      - -H
+      - http://gitea:3000
+    # Host port 8123 must stay in sync with GITEA_MCP_PORT / GITEA_MCP_URL in
+    # tools/sdd_cli/tool_installer.py (the client entries point there).
+    ports:
+      - "8123:8080"
+    networks:
+      - gitea
+    restart: unless-stopped
 
   runner:
     image: gitea/runner:1.0.0
     container_name: agentic-gitea-runner
     depends_on:
-      - gitea
+      gitea:
+        condition: service_healthy
     env_file:
       - ./runner.env
     environment:
@@ -71,8 +108,13 @@ services:
           KUBE_SRC="/run/desktop/mnt/host/c/Users/${first_user}/.kube/config"
         else
           KUBE_SRC=""
-          echo "WARNING: Could not locate kubeconfig path."
+          echo "INFO: No host kubeconfig found - runner jobs run without K8s volume access."
         fi
+        # The kubeconfig valid_volumes entry is emitted only when a source path
+        # was found: a blank ${KUBE_SRC} would render a malformed
+        # '- :/home/runner/.kube/config:ro' line in config.yml. WIN_USER,
+        # first_user, and KUBE_SRC defaulting to blank is expected on machines
+        # without a host kubeconfig - the lab works fine without it.
         cat > /tmp/config.yml << YAMLEOF
         log:
           level: info
@@ -90,7 +132,13 @@ services:
           workdir_parent: /workspace
           valid_volumes:
             - /var/run/docker.sock:/var/run/docker.sock
-            - ${KUBE_SRC}:/home/runner/.kube/config:ro
+        YAMLEOF
+        if [ -n "${KUBE_SRC}" ]; then
+          # 4 leading spaces matches the other valid_volumes items after the
+          # YAML block scalar strips the 8-space base indent.
+          printf '    - %s:/home/runner/.kube/config:ro\n' "${KUBE_SRC}" >> /tmp/config.yml
+        fi
+        cat >> /tmp/config.yml << YAMLEOF
           force_pull: false
           force_rebuild: false
           bind_workdir: false

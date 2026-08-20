@@ -1,0 +1,9 @@
+[bandit]
+# SDD lab tooling skips (rationale inline):
+#   B404/B603/B607: subprocess used intentionally by the CLI wrappers.
+#   B105/B107: fixture/provisioning credentials for local lab services only.
+#   B110: expected transient failures are intentionally swallowed.
+#   B108: lab scripts write transient artifacts under /tmp.
+#   B310: urlopen used only against fixed local lab service URLs.
+#   B104: health probe binds 0.0.0.0 so Docker can publish its port.
+skips = B104,B105,B107,B108,B110,B310,B404,B603,B607

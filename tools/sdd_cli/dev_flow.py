@@ -20,18 +20,19 @@ from ._shared import (
     add_bucket_item,
     classify_delivery_risk,
     classify_ticket_readiness,
+    configure_result,
     fail,
     format_duration,
     get_high_risk_patterns,
     max_text,
     min_text,
     nested,
-    new_configure_result,
     parse_pairs,
     parse_time,
     profile_audit_findings,
     read_json,
     read_ticket_pattern,
+    require,
     selected_deployment_provider,
     split_list,
     write_json,
@@ -44,7 +45,7 @@ def ensure_delivery_context(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Create/update ticket delivery context lock."""
-    path = root / ".codex" / "delivery-context.local.json"
+    path = root / ".template" / "delivery-context.local.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = read_json(path, optional=True) if path.exists() else {}
     ticket_key = values.get("ticketKey")
@@ -56,7 +57,7 @@ def ensure_delivery_context(
         and not replace_existing
     ):
         raise CliError(
-            f"Existing .codex/delivery-context.local.json points to '{existing.get('ticketKey')}'."
+            f"Existing .template/delivery-context.local.json points to '{existing.get('ticketKey')}'."
         )
     data = {
         "ticketKey": ticket_key,
@@ -75,7 +76,7 @@ def ensure_delivery_context(
         "path": str(path),
         "actions": [
             {
-                "path": ".codex/delivery-context.local.json",
+                "path": ".template/delivery-context.local.json",
                 "key": "ensure-delivery-context",
                 "severity": "info",
                 "message": f"Create or update ticket context lock for {ticket_key}.",
@@ -94,7 +95,7 @@ def sync_worktree_local_config(
     """Copy allowlisted local config files to worktrees."""
     from ._shared import get_allowlisted_local_config
 
-    result = new_configure_result(
+    result = configure_result(
         "SyncWorktreeLocalConfig", dry_run, write_enabled=not dry_run
     )
     worktrees = [Path(path) for path in values.get("worktreePaths", [])]
@@ -200,12 +201,16 @@ def validate_deployment_lane(path: Path, options: dict[str, str]) -> dict[str, A
 
 
 def validate_parallel_delivery_dry_run(root: Path, input_json: str) -> dict[str, Any]:
-    """Validate parallel delivery dry-run constraints."""
+    """Validate parallel delivery dry-run constraints.
+
+    There is no ``parallelDelivery.enabled`` gate: the AI determines that the
+    user asked to implement more than one ticket and applies parallel delivery.
+    The dry run validates capacity, isolation, and serialized-lane constraints
+    only.
+    """
     data = json.loads(input_json)
     errors: list[str] = []
     tickets = data.get("tickets", [])
-    if not data.get("enabled"):
-        errors.append("parallelDelivery.enabled must be true.")
     active_count = len(tickets)
     max_active = int(data.get("maxActiveTickets", 0) or 0)
     if max_active and active_count > max_active:
@@ -304,19 +309,9 @@ def resolve_openproject_time_activity(
 
 def render_openproject_time_telemetry_comment(ticket_key: str, input_json: str) -> str:
     """Render OpenProject time telemetry as markdown comment."""
-    row = json.loads(input_json)
-    stage = row.get("workflowStage", "")
-    lines = [
-        f"IA generated workflow telemetry: {ticket_key}:{stage}",
-        f"agentRole: {row.get('agentRole', '')}",
-        f"startedUtc: {row.get('startedUtc', '')}",
-        f"finishedUtc: {row.get('finishedUtc', '')}",
-        f"retryCount: {row.get('retryCount', 0)}",
-        f"outcome: {row.get('outcome', '')}",
-    ]
-    if row.get("blockerCategory"):
-        lines.append(f"blockerCategory: {row['blockerCategory']}")
-    return "\n".join(lines)
+    from .workflow_telemetry import render_telemetry_comment
+
+    return render_telemetry_comment(ticket_key, json.loads(input_json))
 
 
 # ── Ticket comment rendering ─────────────────────────────────────────────
@@ -379,23 +374,65 @@ def render_ticket_comment(comment_type: str, input_json: str) -> str:
 
 
 def audit_skill_contracts(
-    root: Path, include_configure: bool = False
+    root: Path, include_configure: bool = True
 ) -> dict[str, Any]:
     """Audit SKILL.md files for required sections and terms."""
     profile_findings = profile_audit_findings(root)
-    skill_root = root / ".codex" / "skills"
+    skill_root = root / ".agents" / "skills"
     results: list[dict[str, Any]] = []
+    # Skills exempt from the repo contract audit. Repo-owned support/flow skills
+    # (caveman, ponytail, grill-*, domain-modeling) stay exempt because they are
+    # always-active helpers. Vendored 3rd-party skill packs (installed from
+    # external registries) are exempt because they follow their upstream template,
+    # not the repo contract — the audit checks only repo-owned workflow skills.
+    # Add newly installed 3rd-party packs to this set; never add repo-owned
+    # dev-flow-*, dev-ops-*, configure-*, or project-guidance-* skills here.
     support_skill_names = {
+        # Always-active core helpers
         "caveman",
-        "domain-modeling",
-        "grill-me",
-        "grill-with-docs",
-        "grilling",
         "ponytail",
         "ponytail-audit",
         "ponytail-debt",
         "ponytail-help",
         "ponytail-review",
+        # Repo-owned planning/grill support
+        "domain-modeling",
+        "grill-with-docs",
+        # Vendored 3rd-party skill packs (external templates, not repo-owned)
+        "architecture-decision-records",
+        "architecture-patterns",
+        "clean-architecture",
+        "clean-code",
+        "cqrs-implementation",
+        "dashboarding",
+        "design-pattern-review",
+        "docker-maintenance",
+        "domain-driven-design",
+        "dozzle-logs",
+        "e2e-testing-patterns",
+        "event-store-design",
+        "gitea",
+        "gitea-actions-workflow",
+        "gitea-tea",
+        "grafana-oss",
+        "improve-codebase-architecture",
+        "kubernetes-manifest-authoring",
+        "kubernetes-patterns",
+        "kubernetes-specialist",
+        "logging-best-practices",
+        "microservices-architect",
+        "multi-stage-dockerfile",
+        "nexus-repository-management",
+        "owasp-security",
+        "projection-patterns",
+        "promql",
+        "refactoring-patterns",
+        "release-it",
+        "saga-orchestration",
+        "security-audit",
+        "solid",
+        "threat-modeling",
+        "webapp-testing",
     }
     if not skill_root.exists():
         return {
@@ -404,8 +441,6 @@ def audit_skill_contracts(
             "failed": 0,
             "profilePassed": not profile_findings,
             "profileFindings": profile_findings,
-            "providerSpecificPassed": True,
-            "providerSpecificFindings": [],
             "results": [],
         }
     required_sections = [
@@ -416,8 +451,8 @@ def audit_skill_contracts(
         "Failure Rules",
     ]
     required_terms = [
-        ".codex/skills/_shared/delivery-contract.md",
-        "docs/context-management.md",
+        ".agents/skills/_shared/delivery-contract.md",
+        "docs/conventions/context-management.md",
         "ticket",
         "validation",
         "handoff",
@@ -449,8 +484,6 @@ def audit_skill_contracts(
         "failed": sum(1 for item in results if not item["passed"]),
         "profilePassed": not profile_findings,
         "profileFindings": profile_findings,
-        "providerSpecificPassed": True,
-        "providerSpecificFindings": [],
         "results": results,
     }
 
@@ -616,14 +649,6 @@ def next_rc_version_output(
 # ── Coverage / Cobertura ─────────────────────────────────────────────────
 
 
-def read_coverage_threshold(path: Path, fallback: int = 80) -> str:
-    """Read coverage minimum percent from quality JSON."""
-    if not path.exists():
-        return str(fallback)
-    data = read_json(path)
-    return str(nested(data, "coverage", "minimumPercent") or fallback)
-
-
 def read_cobertura_line_rate(path: Path) -> str:
     """Parse line-rate from Cobertura XML."""
     root_el = safe_xml_parse(path).getroot()
@@ -657,6 +682,21 @@ def check_git_ignored(root: Path, path: str) -> dict[str, Any]:
 
 
 # ── Commit message validation ────────────────────────────────────────────
+
+
+def _read_message_file(path: str) -> str:
+    """Read a commit message from a file, falling back to empty on error.
+
+    Lets the lefthook commit-msg hook pass the message file path directly
+    instead of relying on shell command substitution, which is fragile on
+    Windows where lefthook wraps the run command in a nested shell.
+    """
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def validate_commit_message(root: Path, message: str) -> dict[str, Any]:
@@ -861,7 +901,8 @@ def run_dev_flow(args: list[str]) -> int:
     if not args:
         print(
             "Available: ensure-delivery-context, sync-worktree-config, validate-ticket-lock, "
-            "validate-deployment-lane, validate-parallel-dry-run, read-openproject-telemetry, resolve-openproject-activity, "
+            "validate-deployment-lane, validate-parallel-dry-run, telemetry-upsert, append-telemetry, "
+            "read-openproject-telemetry, resolve-openproject-activity, "
             "render-openproject-comment, render-ticket-comment, validate-release-manifest, "
             "create-release-manifest, create-artifact-pointer, update-release-manifest, "
             "artifact-paths, next-rc-version, ticket-readiness, delivery-risk, check-git-ignored, "
@@ -882,16 +923,18 @@ def run_dev_flow(args: list[str]) -> int:
             root, _parse_values(options), dry_run
         ),
         "validate-ticket-lock": lambda: validate_ticket_lock(
-            Path(options.get("path", root / ".codex" / "delivery-context.local.json")),
+            Path(options.get("path", root / ".template" / "delivery-context.local.json")),
             {k[4:]: v for k, v in options.items() if k.startswith("opt-")},
         ),
         "validate-deployment-lane": lambda: validate_deployment_lane(
-            Path(options.get("path", root / ".codex" / "parallel-delivery.local.json")),
+            Path(options.get("path", root / ".template" / "parallel-delivery.local.json")),
             {k[4:]: v for k, v in options.items() if k.startswith("opt-")},
         ),
         "validate-parallel-dry-run": lambda: validate_parallel_delivery_dry_run(
             root, require(options, "input-json")
         ),
+        "telemetry-upsert": lambda: _run_telemetry_upsert(root, options, dry_run),
+        "append-telemetry": lambda: _run_append_telemetry(root, options),
         "read-openproject-telemetry": lambda: read_openproject_time_telemetry(
             require(options, "ticket-key"), require(options, "input-json")
         ),
@@ -928,7 +971,9 @@ def run_dev_flow(args: list[str]) -> int:
         ),
         "check-git-ignored": lambda: check_git_ignored(root, require(options, "path")),
         "validate-commit-message": lambda: validate_commit_message(
-            root, options.get("message", "")
+            root,
+            options.get("message", "")
+            or _read_message_file(options.get("message-file", "")),
         ),
         "extract-ticket-key": lambda: extract_ticket_key(
             require(options, "message"),
@@ -936,7 +981,7 @@ def run_dev_flow(args: list[str]) -> int:
             options.get("fallback", ""),
         ),
         "audit-skill-contracts": lambda: audit_skill_contracts(
-            root, options.get("include-configure", "false").lower() == "true"
+            root, options.get("include-configure", "true").lower() == "true"
         ),
         "parse-workload-forecast": lambda: parse_workload_forecast(
             require(options, "tasks-path"),
@@ -974,8 +1019,17 @@ def _parse_values(options: dict[str, str]) -> dict[str, Any]:
         return {}
 
 
-def require(options: dict[str, str], key: str) -> str:
-    value = options.get(key)
-    if not value:
-        raise CliError(f"Missing required option: --{key}")
-    return value
+def _run_telemetry_upsert(
+    root: Path, options: dict[str, str], dry_run: bool
+) -> dict[str, Any]:
+    """Dispatch telemetry-upsert to the standalone workflow telemetry script."""
+    from .workflow_telemetry import telemetry_upsert_cli
+
+    return telemetry_upsert_cli(root, options, dry_run)
+
+
+def _run_append_telemetry(root: Path, options: dict[str, str]) -> dict[str, Any]:
+    """Dispatch append-telemetry (JSONL fallback) to the standalone script."""
+    from .workflow_telemetry import append_telemetry_cli
+
+    return append_telemetry_cli(root, options)

@@ -1,0 +1,2 @@
+# gitleaks 8.x ignore entries must be full fingerprints (path:rule:line).
+# Path-based suppressions live in .gitleaks.toml [allowlist] instead.

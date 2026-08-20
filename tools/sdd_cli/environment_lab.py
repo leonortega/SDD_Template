@@ -5,11 +5,9 @@ from __future__ import annotations
 import http.client
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -17,13 +15,17 @@ from urllib.parse import urlparse
 from ._shared import (
     REPO_ROOT,
     add_bucket_item,
+    client_tools_project_identifier_findings,
     configure_result,
     configure_set_env_mode,
     copy_seed_file,
     ensure_seed_file,
     env_template_values,
+    http_json,
     http_status,
     local_path,
+    load_project_profile,
+    native_command,
     nested,
     normalize_stack_domain,
     read_env_file,
@@ -35,6 +37,50 @@ from ._shared import (
 from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea_mcp, install_k8s_mcp, install_openproject_mcp
 
 # ── Health check helpers ───────────────────────────────────────────────────
+
+
+def health_check(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Quick health check of all lab services.
+
+    Pings each service endpoint once with a short timeout and returns a
+    table of results. Unlike wait_for_service, this does not poll — it
+    reports the current state immediately.
+    """
+    services: list[dict[str, str]] = [
+        {"name": "Gitea", "url": "http://localhost:3000", "healthPath": "/api/v1/user"},
+        {"name": "OpenProject", "url": "http://localhost:8080", "healthPath": "/"},
+        {"name": "Nexus", "url": "http://localhost:8088", "healthPath": "/service/rest/v1/status"},
+        {"name": "Grafana", "url": "http://localhost:3001", "healthPath": "/api/health"},
+        {"name": "Seq", "url": "http://localhost:5341", "healthPath": "/api"},
+        {"name": "Dozzle", "url": "http://localhost:8888", "healthPath": "/"},
+    ]
+
+    results: list[dict[str, Any]] = []
+    all_up = True
+    for svc in services:
+        url = svc["url"]
+        health_url = f"{url.rstrip('/')}{svc['healthPath']}"
+        if dry_run:
+            results.append({"name": svc["name"], "url": url, "status": "would-check"})
+            continue
+        status, error = http_status(health_url, timeout=5)
+        is_up = status is not None and status < 500
+        results.append({
+            "name": svc["name"],
+            "url": url,
+            "status": "✅ UP" if is_up else "❌ DOWN",
+            "httpStatus": status,
+            "error": error if not is_up else "",
+        })
+        if not is_up:
+            all_up = False
+
+    return {
+        "command": "health-check",
+        "valid": all_up,
+        "services": results,
+        "message": "All services healthy" if all_up else "Some services are not reachable",
+    }
 
 
 def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[str, Any]:
@@ -67,6 +113,513 @@ def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[st
     }
 
 
+# ── Prune leftover Docker resources ──────────────────────────────────────
+
+
+def prune_docker_leftovers(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove leftover Docker containers, images, and volumes.
+
+    Runs at the END of a fully-successful setup-lab to reclaim disk space.
+    Scope is deliberately conservative — the healthy lab is never touched:
+
+    - containers: only STOPPED containers that do NOT belong to a compose
+      project (``label!=com.docker.compose.project``) — every lab service is
+      compose-labeled, so running or stopped lab containers are kept.
+    - images: only DANGLING images (untagged ``<none>``) — tagged lab images
+      (``sdd-*:local`` runner/CI images, compose images) are never removed.
+    - volumes: only volumes WITHOUT a compose project label
+      (``label!=com.docker.compose.project``) — compose-owned lab volumes and
+      their data are kept.
+
+    Non-fatal and idempotent. Dry-run only reports what would be pruned.
+    """
+    result = configure_result(
+        "PruneDockerLeftovers", dry_run, write_enabled=not dry_run
+    )
+    prunes: list[tuple[str, list[str]]] = [
+        (
+            "containers",
+            [
+                "docker",
+                "container",
+                "prune",
+                "-f",
+                "--filter",
+                "label!=com.docker.compose.project",
+            ],
+        ),
+        ("images", ["docker", "image", "prune", "-f"]),
+        (
+            "volumes",
+            [
+                "docker",
+                "volume",
+                "prune",
+                "-f",
+                "--filter",
+                "label!=com.docker.compose.project",
+            ],
+        ),
+    ]
+    for kind, command in prunes:
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": f"prune.{kind}",
+                    "severity": "info",
+                    "message": (
+                        f"Would prune leftover {kind}: "
+                        f"{' '.join(command[2:])}."
+                    ),
+                    "phase": "apply",
+                }
+            )
+            continue
+        try:
+            pruned = run_native(command, root, timeout=120)
+            if pruned["returncode"] == 0:
+                message = pruned["stdout"].strip() or "nothing to remove"
+                result["actions"].append(
+                    {
+                        "path": "docker",
+                        "key": f"prune.{kind}",
+                        "severity": "info",
+                        "message": f"Pruned leftover {kind}: {message}.",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "docker",
+                    f"prune.{kind}",
+                    f"docker {kind} prune failed: {pruned['stderr']}",
+                    "warning",
+                    "apply",
+                )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                f"prune.{kind}",
+                f"Could not prune {kind}: {ex}",
+                "warning",
+                "apply",
+            )
+    # Tagged app images (old registry commit SHAs + scratch tags) — the CI prune
+    # steps were removed from package-deploy.yml, so this is the only place they
+    # get cleaned (runs at ticket close via dev-ops-cleanup-resources and at the
+    # end of setup-lab). Non-fatal, dry-run capable.
+    _prune_tagged_images(result, root, dry_run)
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+def _registered_app_ids(root: Path) -> set[str]:
+    """appIds from ``infra/deployment/apps.json`` (empty when missing/unparseable)."""
+    apps_path = root / "infra" / "deployment" / "apps.json"
+    if not apps_path.exists():
+        return set()
+    try:
+        apps_data = json.loads(apps_path.read_text(encoding="utf-8"))
+        apps = apps_data.get("apps", []) if isinstance(apps_data, dict) else []
+    except json.JSONDecodeError:
+        return set()
+    return {
+        str(a.get("appId", "")).strip()
+        for a in apps
+        if isinstance(a, dict) and a.get("appId")
+    }
+
+
+def _list_tagged_images(root: Path) -> tuple[list[tuple[str, str, str]], str | None]:
+    """docker images --format '{CreatedAt}\t{Repository}:{Tag}' → [(created, repo, tag)]."""
+    out = run_native(
+        ["docker", "images", "--format", "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}"],
+        root,
+        timeout=60,
+    )
+    if out["returncode"] != 0:
+        return [], out["stderr"].strip() or "docker images failed"
+    rows: list[tuple[str, str, str]] = []
+    for line in out["stdout"].splitlines():
+        if "\t" not in line:
+            continue
+        created, ref = line.split("\t", 1)
+        repo, sep, tag = ref.rpartition(":")
+        if sep:
+            rows.append((created.strip(), repo.strip(), tag.strip()))
+    return rows, None
+
+
+_REGISTRY_PREFIXES = ("host.docker.internal:5001/", "localhost:5001/")
+
+
+def _prune_tagged_images(result: dict[str, Any], root: Path, dry_run: bool) -> None:
+    """Retention for TAGGED app images: old registry commit SHAs + scratch tags.
+
+    The CI prune steps were removed from ``package-deploy.yml``, so this is the
+    only place old tagged app images get cleaned (runs at ticket close via
+    ``dev-ops-cleanup-resources`` and at the end of ``setup-lab``):
+
+    - ``registry-tags``: ``{host.docker.internal:5001|localhost:5001}/{app}:<sha>``
+      — keep ``:latest`` and the newest ``LOCAL_IMAGE_KEEP`` (default 1) SHA per
+      app, remove older SHAs. The host can always rebuild or pull from Nexus, so
+      unlike the kind store (keep 3 — kind cannot pull) the host needs only the
+      current build.
+    - ``scratch-tags``: unqualified ``{appId}:<tag>`` images (``dellop-api:fix``,
+      ``:jwt``, ``:pkgs``, ``:test``, ...) — removed for every app registered in
+      ``apps.json``, except ``:latest``. Skips cleanly when apps.json has no apps
+      (template state).
+
+    Non-fatal: a failed rmi is a warning finding. Dry-run adds would-do actions
+    without calling docker.
+    """
+    keep = int(os.environ.get("LOCAL_IMAGE_KEEP", "1"))
+    app_ids = _registered_app_ids(root)
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.registry-tags",
+                "severity": "info",
+                "message": (
+                    f"Would prune leftover registry-tags: keep :latest + newest {keep} "
+                    "commit SHA per app on host.docker.internal:5001 and "
+                    "localhost:5001, remove older SHAs."
+                ),
+                "phase": "apply",
+            }
+        )
+        if app_ids:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.scratch-tags",
+                    "severity": "info",
+                    "message": (
+                        "Would prune leftover scratch-tags: remove unqualified tags "
+                        f"of registered apps ({', '.join(sorted(app_ids))}) except :latest."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        return
+
+    rows, list_err = _list_tagged_images(root)
+    if list_err:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "prune.tagged-images",
+            f"docker images list failed: {list_err}",
+            "warning",
+            "apply",
+        )
+        return
+
+    # Phase A — registry commit SHAs (keep :latest + newest KEEP per app).
+    hex_chars = "0123456789abcdef"
+    by_app: dict[str, list[tuple[str, str]]] = {}
+    for created, repo, tag in rows:
+        if not repo.startswith(_REGISTRY_PREFIXES):
+            continue
+        app = repo.split("/", 1)[1]
+        if tag == "latest":
+            continue  # never prune :latest
+        if len(tag) != 40 or any(c not in hex_chars for c in tag):
+            continue
+        by_app.setdefault(app, []).append((created, f"{repo}:{tag}"))
+    registry_prune: list[str] = []
+    for app, entries in sorted(by_app.items()):
+        # Lexicographic sort works for Go's CreatedAt format.
+        entries.sort(key=lambda e: e[0], reverse=True)
+        for _, ref in entries[keep:]:
+            registry_prune.append(ref)
+
+    if registry_prune:
+        removed = run_native(["docker", "rmi", *registry_prune], root, timeout=120)
+        if removed["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.registry-tags",
+                    "severity": "info",
+                    "message": (
+                        f"Pruned leftover registry-tags: removed {len(registry_prune)} "
+                        f"old commit SHA tag(s) (kept :latest + newest {keep} per app)."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                "prune.registry-tags",
+                f"docker rmi failed for old registry tags: {removed['stderr']}",
+                "warning",
+                "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.registry-tags",
+                "severity": "info",
+                "message": "No old registry tags to prune.",
+                "phase": "apply",
+            }
+        )
+
+    # Phase B — unqualified scratch tags of registered apps (skip when none).
+    if not app_ids:
+        return
+    scratch_prune: list[str] = []
+    for _, repo, tag in rows:
+        if "/" in repo or repo not in app_ids or tag == "latest":
+            continue
+        scratch_prune.append(f"{repo}:{tag}")
+    if scratch_prune:
+        removed = run_native(["docker", "rmi", *scratch_prune], root, timeout=120)
+        if removed["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.scratch-tags",
+                    "severity": "info",
+                    "message": (
+                        f"Pruned leftover scratch-tags: removed {len(scratch_prune)} "
+                        f"unqualified app tag(s) ({', '.join(sorted(scratch_prune))})."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                "prune.scratch-tags",
+                f"docker rmi failed for scratch tags: {removed['stderr']}",
+                "warning",
+                "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.scratch-tags",
+                "severity": "info",
+                "message": "No scratch tags to prune.",
+                "phase": "apply",
+            }
+        )
+
+
+def prune_kind_images(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove old app images from the kind cluster's containerd store.
+
+    Ticket-close counterpart of the CI prune steps removed from
+    ``package-deploy.yml`` (they never ran reliably): the kind node accumulates
+    one ``{registry}/{app}:<commitSha>`` tag per deploy via ``kind load
+    docker-image`` and the host Docker daemon prune never touches it. This
+    command keeps the newest ``KEEP`` commit tags per app and removes the rest.
+
+    Conservative and non-fatal:
+
+    - node: ``docker inspect ${KIND_NODE}`` (default ``sdd-cluster-control-plane``);
+      a missing node skips the prune (reported, not a failure).
+    - listing: ``docker exec <node> ctr -n k8s.io images list`` — refs are
+      ``{registry}/{app}:{40-hex-sha}``; non-app or malformed refs are ignored.
+    - age ordering: host daemon ``CreatedAt`` (``docker images --format``) so the
+      newest tags per app are deterministic; kind refs with no host timestamp
+      sort as oldest (prune candidates). ``KEEP`` defaults to 3
+      (``KIND_IMAGE_KEEP``), registry defaults to ``host.docker.internal:5001``
+      (``NEXUS_DOCKER_REGISTRY``).
+    - removal: ``docker exec <node> ctr -n k8s.io images rm <refs...>`` in one
+      call (ctr accepts multiple images); a failed removal is a warning.
+
+    Dry-run only reports what would be pruned (no docker calls). Idempotent.
+    """
+    result = configure_result(
+        "PruneKindImages", dry_run, write_enabled=not dry_run
+    )
+    node = os.environ.get("KIND_NODE", "sdd-cluster-control-plane")
+    keep = int(os.environ.get("KIND_IMAGE_KEEP", "3"))
+    registry = os.environ.get(
+        "NEXUS_DOCKER_REGISTRY", "host.docker.internal:5001"
+    ).rstrip("/")
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Would prune leftover kind-images: keep newest {keep} "
+                    f"commit tags per app in kind node {node}, remove the rest "
+                    f"(docker exec {node} ctr -n k8s.io images list/rm)."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    inspect = run_native(["docker", "inspect", node], root, timeout=60)
+    if inspect["returncode"] != 0:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Kind node {node} not found - skipping kind image prune."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    listed = run_native(
+        ["docker", "exec", node, "ctr", "-n", "k8s.io", "images", "list"],
+        root,
+        timeout=120,
+    )
+    if listed["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "prune.kind-images",
+            f"ctr images list failed: {listed['stderr']}",
+            "warning",
+            "apply",
+        )
+        result["valid"] = True
+        return result
+
+    prefix = registry + "/"
+    hex_chars = "0123456789abcdef"
+    refs: set[str] = set()
+    for line in listed["stdout"].splitlines():
+        fields = line.strip().split()
+        if not fields:
+            continue
+        ref = fields[0].rstrip("\r")
+        if not ref.startswith(prefix):
+            continue
+        app, sep, sha = ref[len(prefix):].rpartition(":")
+        if not sep or len(sha) != 40 or any(c not in hex_chars for c in sha):
+            continue
+        refs.add(ref)
+
+    if not refs:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": "No app images to prune in kind.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # Host daemon CreatedAt gives a deterministic age per tag; kind refs missing
+    # on the host (e.g. host store already pruned) sort as oldest candidates.
+    created_at: dict[str, str] = {}
+    host_images = run_native(
+        [
+            "docker",
+            "images",
+            "--format",
+            "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}",
+        ],
+        root,
+        timeout=60,
+    )
+    if host_images["returncode"] == 0:
+        for line in host_images["stdout"].splitlines():
+            if "\t" not in line:
+                continue
+            created, tag = line.split("\t", 1)
+            created_at[tag.strip()] = created.strip()
+
+    by_app: dict[str, list[tuple[str, str]]] = {}
+    for ref in refs:
+        app = ref[len(prefix):].rpartition(":")[0]
+        by_app.setdefault(app, []).append((ref, created_at.get(ref, "")))
+
+    prune_list: list[str] = []
+    for app, entries in sorted(by_app.items()):
+        # Lexicographic sort works for Go's CreatedAt format; empty = oldest.
+        entries.sort(key=lambda e: e[1], reverse=True)
+        for ref, _ in entries[keep:]:
+            prune_list.append(ref)
+
+    if not prune_list:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"No old images to prune in kind (kept newest {keep} per app)."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    removed = run_native(
+        [
+            "docker",
+            "exec",
+            node,
+            "ctr",
+            "-n",
+            "k8s.io",
+            "images",
+            "rm",
+            *prune_list,
+        ],
+        root,
+        timeout=120,
+    )
+    if removed["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Pruned leftover kind-images: removed {len(prune_list)} "
+                    f"old tag(s) from node {node} (kept newest {keep} per app)."
+                ),
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "prune.kind-images",
+            f"kind image prune failed: {removed['stderr']}",
+            "warning",
+            "apply",
+        )
+    result["valid"] = True
+    return result
+
+
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
 
@@ -90,6 +643,11 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     early = _add_step(init_local_files(root, dry_run))
     if early:
         return early
+
+    # 1b. Ensure OpenProject env - generate OPENPROJECT_SECRET_KEY_BASE if it
+    #     is missing or still a placeholder. Required before compose up:
+    #     infra/openproject/compose.yml interpolates it with :? (hard fail).
+    _add_step(ensure_openproject_env(root, dry_run), fatal=True)
 
     # 2. Install lefthook git hooks (non-fatal — binary may not be in PATH)
     _add_step(install_lefthook(root, dry_run), fatal=False)
@@ -129,31 +687,37 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     #     If a service doesn't start, later provisioning steps will fail
     #     and the user will be told what went wrong.
     if not dry_run:
+        # Generous timeouts: first boots (esp. OpenProject) can take minutes.
         _add_step(
-            wait_for_service("http://localhost:3000/api/v1/user", timeout=120),
+            wait_for_service("http://localhost:3000/api/v1/user", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:8080", timeout=180),
+            wait_for_service("http://localhost:8080", timeout=360),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=120),
+            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:3001/api/health", timeout=120),
+            wait_for_service("http://localhost:3001/api/health", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:5341/api", timeout=120),
+            wait_for_service("http://localhost:5341/api", timeout=180),
             fatal=False,
         )
 
     # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
-    # 9b. Install Grafana MCP (after Grafana is confirmed running)
+    # 9a. Provision Grafana service account token so the Grafana MCP registers
+    #     with a real token (not a placeholder). Non-fatal: when Grafana is
+    #     unreachable the MCP is still registered without a token.
+    _add_step(provision_grafana_token(root, dry_run), fatal=False)
+
+    # 9b. Install Grafana MCP (after Grafana is confirmed running + token ready)
     _add_step(install_grafana_mcp(root, dry_run), fatal=False)
 
     # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
@@ -165,7 +729,13 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 11b. Install OpenProject MCP (after user provisioning writes API key to env file)
     _add_step(install_openproject_mcp(root, dry_run), fatal=False)
 
-    # 11c. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
+    # 11c. Validate client-tools placeholders (openProject.projectIdentifier
+    #      must be real — the OpenProject MCP/ticket flow reads it).
+    #      Non-fatal: after provisioning the value is set; a warning here means
+    #      provisioning was skipped or failed and needs a re-run.
+    _add_step(validate_client_tools(root, dry_run), fatal=False)
+
+    # 11d. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
     _add_step(install_gitea_mcp(root, dry_run), fatal=False)
 
     # 12. Provision Nexus repositories + accept EULA
@@ -182,8 +752,8 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # 16. Create kind cluster (or verify existing) with port mappings for direct host access.
     #     Uses infra/k8s/kind-config.yaml which maps:
-    #       host:8081 -> nodePort:30080 -> frontend:80
-    #       host:5002 -> nodePort:30500 -> backend:5000
+    #       host:8081 -> nodePort:30080 -> <appId>:80 (web role)
+    #       host:5002 -> nodePort:30500 -> <appId>:5000 (api role)
     #     This replaces Docker Desktop K8s — kind runs as a container, avoids
     #     Docker Engine restart that would disrupt running compose services.
     early = _add_step(setup_kind_cluster(root, dry_run), fatal=True)
@@ -193,11 +763,26 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 17. Install Kubernetes MCP (after K8s is enabled)
     _add_step(install_k8s_mcp(root, dry_run), fatal=False)
 
+    # 17b. Ensure Headlamp K8s web UI is installed (Windows desktop app reads
+    #      ~/.kube/config and shows the kind-sdd-cluster context). Non-fatal.
+    _add_step(ensure_headlamp(root, dry_run), fatal=False)
+
     # 18. Scaffold K8s deployment files (creates Kustomize manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
     # 19. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
     _add_step(set_semgrep_config(root, dry_run), fatal=False)
+
+    # 20. Prune leftover Docker resources (containers/images/volumes) — runs
+    #     ONLY when every prior step passed so the healthy lab is never
+    #     touched (scoped prunes keep compose-owned containers/volumes and
+    #     tagged images). The kind cluster container is the one lab resource
+    #     without a compose label, but this is safe: step 16 is fatal, so kind
+    #     is RUNNING here and `container prune` only removes stopped
+    #     containers — a stopped kind container is a leftover by definition.
+    #     Non-fatal: a failed prune is reported as a warning.
+    if all(s.get("valid", True) for s in steps):
+        _add_step(prune_docker_leftovers(root, dry_run), fatal=False)
 
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
@@ -219,6 +804,7 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     _gitea_ok = any(s.get("command") == "wait-for-service http://localhost:3000/api/v1/user" and s.get("valid") for s in steps)
     _op_ok = any(s.get("command") == "wait-for-service http://localhost:8080" and s.get("valid") for s in steps)
     _nexus_ok = any(s.get("command") == "wait-for-service http://localhost:8088/service/rest/v1/status" and s.get("valid") for s in steps)
+    _grafana_ok = any(s.get("command") == "wait-for-service http://localhost:3001/api/health" and s.get("valid") for s in steps)
 
     # ── Summary: credentials and URLs (only show what's actually running) ─
     summary: dict[str, Any] = {}
@@ -261,14 +847,30 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     )
 
     summary["k8s"] = {
-        "base": "infra/k8s/base/kustomization.yaml (all apps from apps.json)",
-        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)",
+        "base": "apps/<appId>/deploy/ (per-app Deployment/Service kustomizations)",
+        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (compose per-app deploy/ dirs + env image tags)",
         "deploy": [
             "cd infra/k8s/overlays/dev && kustomize build . | kubectl apply -f -",
             "cd infra/k8s/overlays/qa && kustomize build . | kubectl apply -f -",
             "cd infra/k8s/overlays/prod && kustomize build . | kubectl apply -f -",
         ],
     }
+
+    summary["grafana"] = (
+        {
+            "url": "http://localhost:3001",
+            "board": "http://localhost:3001/d/agentic-e2e-health-board",
+            "users": [
+                {"username": "admin", "password": "admin", "role": "admin"},
+            ],
+            "sections": {
+                "Service Health": "Live up/down/not-deployed status of every lab and app service.",
+                "Infrastructure Access": "Links to every tool plus the user/password for each.",
+            },
+        }
+        if _grafana_ok
+        else {"url": "http://localhost:3001", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
 
     result["summary"] = summary
     return result
@@ -320,15 +922,15 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result = configure_result("InitLocalFiles", dry_run, write_enabled=not dry_run)
     copy_seed_file(
         root,
-        ".codex/client-tools.example.json",
-        ".codex/client-tools.local.json",
+        ".template/client-tools.example.json",
+        ".template/client-tools.local.json",
         result,
         dry_run,
     )
     copy_seed_file(
         root,
-        ".codex/quality.example.json",
-        ".codex/quality.local.json",
+        ".template/quality.example.json",
+        ".template/quality.local.json",
         result,
         dry_run,
     )
@@ -336,6 +938,7 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "infra/openproject/variables.env",
         "infra/monitoring/variables.env",
         "infra/gitea/runner.env",
+        "infra/gitea/mcp.env",
     ):
         copy_seed_file(root, relative + ".example", relative, result, dry_run)
     # Also copy runner.env to infra/ for compose env_file resolution (project dir = infra/)
@@ -346,29 +949,134 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         result,
         dry_run,
     )
-    ensure_seed_file(
+    # And mcp.env — infra/gitea/compose.yml reads env_file ./mcp.env with the
+    # compose project dir set to infra/, so the token file must live there too.
+    copy_seed_file(
         root,
-        ".codex/memory/memory_summary.md",
-        "# Memory Summary\n\nNo consumer project memories recorded yet.\n",
+        "infra/gitea/mcp.env.example",
+        "infra/mcp.env",
         result,
         dry_run,
     )
     ensure_seed_file(
         root,
-        ".codex/memory/MEMORY.md",
-        "# Repository Memory Index\n\n- `memory_summary.md`: compact startup context.\n"
-        "- `retrieval-policy.md`: memory read/write rules.\n",
+        "knowledge/README.md",
+        "# Knowledge Base\n\nOperational knowledge that agents consult while "
+        "implementing, debugging, reviewing, and fixing code. No consumer project "
+        "knowledge recorded yet. Read the category folders under `knowledge/` and "
+        "use the `docs-knowledge-maintenance` skill when adding entries.\n",
         result,
         dry_run,
     )
-    ensure_seed_file(
-        root,
-        ".codex/memory/retrieval-policy.md",
-        "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
-        "Verify against current files and live tools before acting.\n",
-        result,
-        dry_run,
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
     )
+    return result
+
+
+def ensure_openproject_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Ensure OPENPROJECT_SECRET_KEY_BASE is set before compose up.
+
+    infra/openproject/compose.yml requires SECRET_KEY_BASE via the
+    ${OPENPROJECT_SECRET_KEY_BASE:?...} interpolation, so `docker compose up`
+    fails while variables.env still carries the example placeholder. This step
+    generates a random 64-byte value when the key is missing or still a
+    placeholder; it is idempotent and keeps an existing generated value.
+    """
+    result = configure_result(
+        "EnsureOpenProjectEnv", dry_run, write_enabled=not dry_run
+    )
+    env_path = root / "infra" / "openproject" / "variables.env"
+    if not env_path.exists():
+        if dry_run:
+            # In dry-run, InitLocalFiles (step 1) skipped writing the file;
+            # in a real run it always exists before this step executes.
+            result["actions"].append(
+                {
+                    "path": "infra/openproject/variables.env",
+                    "key": "secret.ensure",
+                    "severity": "info",
+                    "message": "Would ensure OPENPROJECT_SECRET_KEY_BASE once InitLocalFiles creates variables.env.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        add_bucket_item(
+            result["findings"],
+            "infra/openproject/variables.env",
+            "missing.env",
+            "infra/openproject/variables.env is missing. Run InitLocalFiles first.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    current = read_env_file(env_path).get("OPENPROJECT_SECRET_KEY_BASE", "")
+    if current and not current.startswith("replace-with"):
+        result["actions"].append(
+            {
+                "path": "infra/openproject/variables.env",
+                "key": "secret.keep",
+                "severity": "info",
+                "message": "OPENPROJECT_SECRET_KEY_BASE already set - keeping existing value.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "infra/openproject/variables.env",
+                "key": "secret.generate",
+                "severity": "info",
+                "message": "Would generate OPENPROJECT_SECRET_KEY_BASE (secrets.token_hex(64)).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    import re as _re
+    import secrets
+
+    text = env_path.read_text(encoding="utf-8")
+    generated = secrets.token_hex(64)
+    if _re.search(r"(?m)^OPENPROJECT_SECRET_KEY_BASE=.*$", text):
+        text = _re.sub(
+            r"(?m)^OPENPROJECT_SECRET_KEY_BASE=.*$",
+            "OPENPROJECT_SECRET_KEY_BASE=" + generated,
+            text,
+        )
+    else:
+        text = text.rstrip("\n") + "\nOPENPROJECT_SECRET_KEY_BASE=" + generated + "\n"
+    env_path.write_text(text, encoding="utf-8")
+    result["actions"].append(
+        {
+            "path": "infra/openproject/variables.env",
+            "key": "secret.generated",
+            "severity": "info",
+            "message": "Generated OPENPROJECT_SECRET_KEY_BASE (required before compose up).",
+            "phase": "apply",
+        }
+    )
+    result["valid"] = True
+    return result
+
+
+# ── Validate client tools ───────────────────────────────────────────────
+
+
+def validate_client_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Preflight check: warn when client-tools.local.json holds placeholders.
+
+    Specifically flags a missing/placeholder ``openProject.projectIdentifier``
+    (the OpenProject MCP/ticket flow reads it and would 404). Non-fatal — the
+    step reports a warning finding and stays valid.
+    """
+    result = configure_result("ValidateClientTools", dry_run, write_enabled=False)
+    for finding in client_tools_project_identifier_findings(root):
+        result["findings"].append(finding)
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
@@ -379,11 +1087,12 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Create project profile schema, example, and local overlay."""
-    codex = root / ".codex"
+    """Create project profile schema, example, tracked common profile, and local overlay."""
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
+    common_path = codex / "project-profile.json"
     local_profile_path = codex / "project-profile.local.json"
     changed = False
     actions: list[dict[str, str]] = []
@@ -400,20 +1109,20 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
         actions.append(
             {
-                "path": ".codex/project-profile.schema.json",
+                "path": ".template/project-profile.schema.json",
                 "key": "created",
                 "severity": "info",
-                "message": "Created .codex/project-profile.schema.json.",
+                "message": "Created .template/project-profile.schema.json.",
                 "phase": "apply",
             }
         )
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.schema.json",
+                "path": ".template/project-profile.schema.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.schema.json",
+                "message": "Template already exists: .template/project-profile.schema.json",
                 "phase": "apply",
             }
         )
@@ -423,6 +1132,10 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
+            "projectName": "",
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -436,20 +1149,60 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(profile_path, profile)
         actions.append(
             {
-                "path": ".codex/project-profile.example.json",
+                "path": ".template/project-profile.example.json",
                 "key": "created",
                 "severity": "info",
-                "message": "Created .codex/project-profile.example.json.",
+                "message": "Created .template/project-profile.example.json.",
                 "phase": "apply",
             }
         )
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.example.json",
+                "path": ".template/project-profile.example.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.example.json",
+                "message": "Template already exists: .template/project-profile.example.json",
+                "phase": "apply",
+            }
+        )
+
+    if not common_path.exists():
+        changed = True
+        common_profile = {
+            "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
+            "projectName": "",
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
+            },
+        }
+        if not dry_run:
+            write_json(common_path, common_profile)
+        actions.append(
+            {
+                "path": ".template/project-profile.json",
+                "key": "created",
+                "severity": "info",
+                "message": "Created .template/project-profile.json (tracked common profile).",
+                "phase": "apply",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "path": ".template/project-profile.json",
+                "key": "exists",
+                "severity": "info",
+                "message": "Template already exists: .template/project-profile.json",
                 "phase": "apply",
             }
         )
@@ -459,6 +1212,10 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         local_profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
+            "projectName": "",
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -472,7 +1229,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(local_profile_path, local_profile)
         actions.append(
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "created",
                 "severity": "info",
                 "message": "Created ignored stack/profile overlay.",
@@ -482,10 +1239,10 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.local.json",
+                "message": "Template already exists: .template/project-profile.local.json",
                 "phase": "apply",
             }
         )
@@ -494,7 +1251,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "mode": "InitProjectProfile",
         "valid": True,
         "changed": changed,
-        "path": ".codex/project-profile.example.json",
+        "path": ".template/project-profile.example.json",
         "dryRun": dry_run,
         "actions": actions,
     }
@@ -505,8 +1262,8 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def init_quality_templates(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create delivery-policy.json from the SDD template."""
-    path = root / ".codex" / "delivery-policy.json"
-    data = read_json(REPO_ROOT / ".codex" / "delivery-policy.json")
+    path = root / ".template" / "delivery-policy.json"
+    data = read_json(REPO_ROOT / ".template" / "delivery-policy.json")
     changed = not path.exists()
     if not dry_run:
         write_json(path, data)
@@ -514,7 +1271,7 @@ def init_quality_templates(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "mode": "InitQualityGateTemplates",
         "valid": True,
         "changed": changed,
-        "path": ".codex/delivery-policy.json",
+        "path": ".template/delivery-policy.json",
         "dryRun": dry_run,
     }
 
@@ -768,7 +1525,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     result = configure_result(
         "SetGiteaBranchProtection", dry_run, write_enabled=not dry_run
     )
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {})
     token = gitea.get("apiToken", "")
     base_url = str(gitea.get("baseUrl", "")).rstrip("/")
@@ -779,7 +1536,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             "mode": "SetGiteaBranchProtection",
             "valid": False,
             "errors": [
-                "Gitea baseUrl, owner, repo, and apiToken are required in .codex/client-tools.local.json."
+                "Gitea baseUrl, owner, repo, and apiToken are required in .template/client-tools.local.json."
             ],
         }
     approvals = nested(client, "pr", "minimumApprovals") or {"dev": 1, "main": 1}
@@ -913,7 +1670,7 @@ def verify_gitea_api_token(
     result = configure_result(
         "VerifyGiteaApiToken", dry_run, write_enabled=not dry_run
     )
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {}) if client else {}
     token = gitea.get("apiToken", "")
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
@@ -995,18 +1752,18 @@ def verify_gitea_api_token(
 
 
 def generate_gitea_api_token(
-    root: Path, dry_run: bool = False
+    root: Path, dry_run: bool = False, _depth: int = 0
 ) -> dict[str, Any]:
     """Generate a new Gitea API token with write scopes using admin Basic auth.
 
-    The token is written to .codex/client-tools.local.json under gitea.apiToken.
+    The token is written to .template/client-tools.local.json under gitea.apiToken.
     Uses the admin credentials (admin/admin123) via Basic auth to create the token
     for the admin user via POST /api/v1/users/admin/tokens.
     """
     result = configure_result(
         "GenerateGiteaApiToken", dry_run, write_enabled=not dry_run
     )
-    client_path = root / ".codex" / "client-tools.local.json"
+    client_path = root / ".template" / "client-tools.local.json"
     client = read_json(client_path, optional=True)
     gitea = client.get("gitea", {}) if client else {}
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
@@ -1016,7 +1773,7 @@ def generate_gitea_api_token(
     if dry_run:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json",
+                "path": ".template/client-tools.local.json",
                 "key": "token.generate",
                 "severity": "info",
                 "message": "Would generate Gitea API token with scopes: write:repository, write:issue, write:pull_request.",
@@ -1074,7 +1831,7 @@ def generate_gitea_api_token(
                 write_json(client_path, client)
                 result["actions"].append(
                     {
-                        "path": ".codex/client-tools.local.json/gitea.apiToken",
+                        "path": ".template/client-tools.local.json/gitea.apiToken",
                         "key": "token.generated",
                         "severity": "info",
                         "message": "Generated and saved new Gitea API token with write scopes.",
@@ -1090,8 +1847,9 @@ def generate_gitea_api_token(
                     "Gitea returned 201 but no token in response.",
                     "error",
                 )
-        elif resp.status == 409:
+        elif resp.status in {400, 409}:
             # Token with same name already exists — delete and retry
+            # (Gitea returns 409 in older versions, 400 in newer ones)
             # First list existing tokens
             list_conn = http.client.HTTPConnection(
                 parsed.hostname or "localhost", parsed.port or 3000, timeout=10
@@ -1129,15 +1887,17 @@ def generate_gitea_api_token(
                     if del_resp.status in {204, 200}:
                         result["actions"].append(
                             {
-                                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                                "path": ".template/client-tools.local.json/gitea.apiToken",
                                 "key": "token.deleted",
                                 "severity": "info",
                                 "message": "Deleted old Gitea API token to allow regeneration.",
                                 "phase": "apply",
                             }
                         )
-                        # Retry: call ourselves recursively (only once)
-                        return generate_gitea_api_token(root, dry_run)
+                        # Retry: call ourselves recursively (bounded — a
+                        # fresh token name should not conflict again).
+                        if _depth < 2:
+                            return generate_gitea_api_token(root, dry_run, _depth + 1)
 
             add_bucket_item(
                 result["findings"],
@@ -1180,7 +1940,7 @@ def renovate_gitea_api_token(
     if not dry_run and verify_result.get("tokenValid") is True:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.verified",
                 "severity": "info",
                 "message": "Current Gitea API token is valid. No renovation needed.",
@@ -1195,7 +1955,7 @@ def renovate_gitea_api_token(
     if dry_run:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.renovate",
                 "severity": "info",
                 "message": "Would renovate Gitea API token (verify + generate if invalid).",
@@ -1210,7 +1970,7 @@ def renovate_gitea_api_token(
     if gen_result.get("valid", False):
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.renovated",
                 "severity": "info",
                 "message": "Renovated Gitea API token (old token was invalid or missing).",
@@ -1568,6 +2328,249 @@ def _observability_checks(
     return result
 
 
+# ── Grafana service account token provisioning ───────────────────────────
+
+
+def provision_grafana_token(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Provision a Grafana service account token for the Grafana MCP.
+
+    Grafana ships with anonymous viewer access (compose), but the Grafana
+    MCP needs an authenticated service account to query dashboards, run
+    Prometheus queries, and manage alerts. This step creates a dedicated
+    'sdd-agent' service account (role: Editor) and a token via the Grafana
+    HTTP API (Basic admin:admin), then writes GRAFANA_URL and
+    GRAFANA_SERVICE_ACCOUNT_TOKEN into infra/monitoring/variables.env
+    (gitignored, local-only) so install_grafana_mcp registers with a real
+    token instead of a placeholder.
+
+    Idempotent: skips when a non-placeholder token is already present.
+    Non-blocking: if Grafana is unreachable or the API call fails, the step
+    reports a warning finding and stays valid — the MCP is then registered
+    without a token and install_grafana_mcp's warning remains the only
+    signal. Either way, the GRAFANA_URL/GRAFANA_SERVICE_ACCOUNT_TOKEN keys
+    are synced to the local env file (empty token on failure) so the
+    template-drift Audit stays clean.
+    """
+    import re as _re
+
+    result = configure_result(
+        "ProvisionGrafanaToken", dry_run, write_enabled=not dry_run
+    )
+    env_path = root / "infra" / "monitoring" / "variables.env"
+    if not env_path.exists():
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": "infra/monitoring/variables.env",
+                    "key": "grafana.token",
+                    "severity": "info",
+                    "message": "Would provision Grafana token once InitLocalFiles creates variables.env.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        add_bucket_item(
+            result["findings"],
+            "infra/monitoring/variables.env",
+            "missing.env",
+            "infra/monitoring/variables.env is missing. Run InitLocalFiles first.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    current = read_env_file(env_path)
+    existing = current.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
+    if existing and "replace-with" not in existing:
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.keep",
+                "severity": "info",
+                "message": "GRAFANA_SERVICE_ACCOUNT_TOKEN already set - keeping existing value.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.generate",
+                "severity": "info",
+                "message": "Would create Grafana service account 'sdd-agent' + token via the Grafana API.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    grafana_url = current.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
+    sa_name = "sdd-agent"
+    token_name = "sdd-agent"
+    auth = ("admin", "admin")
+
+    def _sync_env(token_value: str) -> None:
+        """Upsert GRAFANA_URL + token into the local env file (text-preserving
+        so comments and unrelated keys stay intact)."""
+        text = env_path.read_text(encoding="utf-8")
+        for key, value in (
+            ("GRAFANA_URL", grafana_url),
+            ("GRAFANA_SERVICE_ACCOUNT_TOKEN", token_value),
+        ):
+            if _re.search(rf"(?m)^{_re.escape(key)}=.*$", text):
+                text = _re.sub(
+                    rf"(?m)^{_re.escape(key)}=.*$", f"{key}={value}", text
+                )
+            else:
+                text = text.rstrip("\n") + f"\n{key}={value}\n"
+        env_path.write_text(text, encoding="utf-8")
+
+    try:
+        sa_id = _find_or_create_grafana_sa(grafana_url, sa_name, auth)
+        if sa_id is None:
+            _sync_env("")
+            add_bucket_item(
+                result["findings"],
+                "grafana/api/serviceaccounts",
+                "grafana.sa.create",
+                "Could not create or find Grafana service account 'sdd-agent'.",
+                "warning",
+                "apply",
+            )
+            result["valid"] = True
+            return result
+
+        token = _create_grafana_token(grafana_url, sa_id, token_name, auth)
+        if not token:
+            _sync_env("")
+            add_bucket_item(
+                result["findings"],
+                "grafana/api/serviceaccounts/tokens",
+                "grafana.token.create",
+                "Could not create Grafana service account token.",
+                "warning",
+                "apply",
+            )
+            result["valid"] = True
+            return result
+
+        _sync_env(token)
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.generated",
+                "severity": "info",
+                "message": "Provisioned Grafana service account token for the Grafana MCP.",
+                "phase": "apply",
+            }
+        )
+    except Exception as ex:
+        _sync_env("")
+        add_bucket_item(
+            result["findings"],
+            "grafana",
+            "grafana.token",
+            f"Could not provision Grafana service account token: {ex}",
+            "warning",
+            "apply",
+        )
+    result["valid"] = True  # non-blocking by design
+    return result
+
+
+def _find_or_create_grafana_sa(
+    base_url: str, name: str, auth: tuple[str, str]
+) -> int | None:
+    """Return the Grafana service account id for ``name``, creating it if missing."""
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts",
+        body={"name": name, "role": "Editor", "isDisabled": False},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            if isinstance(data, dict) and data.get("id"):
+                return int(data["id"])
+        except (ValueError, TypeError):
+            pass
+    # Already exists (409/400) → search by name.
+    status, body = http_json(
+        "GET", f"{base_url}/api/serviceaccounts?query={name}", basic=auth, timeout=10
+    )
+    if status == 200:
+        try:
+            accounts = json.loads(body)
+            if isinstance(accounts, list):
+                for acc in accounts:
+                    if acc.get("name") == name and acc.get("id"):
+                        return int(acc["id"])
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _create_grafana_token(
+    base_url: str, sa_id: int, name: str, auth: tuple[str, str]
+) -> str:
+    """Create a service account token, replacing an existing token of the same name."""
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts/{sa_id}/tokens",
+        body={"name": name},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            key = (data or {}).get("key", "")
+            if key:
+                return key
+        except (ValueError, TypeError):
+            pass
+    # Token name already exists (409) → list, delete the stale one, retry once.
+    status, body = http_json(
+        "GET", f"{base_url}/api/serviceaccounts/{sa_id}/tokens", basic=auth, timeout=10
+    )
+    if status == 200:
+        try:
+            tokens = json.loads(body)
+            if isinstance(tokens, list):
+                for tok in tokens:
+                    if tok.get("name") == name and tok.get("id"):
+                        http_json(
+                            "DELETE",
+                            f"{base_url}/api/serviceaccounts/{sa_id}/tokens/{tok['id']}",
+                            basic=auth,
+                            timeout=10,
+                        )
+                        break
+        except (ValueError, TypeError):
+            pass
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts/{sa_id}/tokens",
+        body={"name": name},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            return (data or {}).get("key", "")
+        except (ValueError, TypeError):
+            pass
+    return ""
+
+
 # ── Configure modes (set client tools, stack, quality, recommendations) ──
 
 
@@ -1575,7 +2578,7 @@ def set_client_tools(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Set client-tools.local.json values."""
-    path = root / ".codex" / "client-tools.local.json"
+    path = root / ".template" / "client-tools.local.json"
     current = read_json(path, optional=True)
     from ._shared import merge_dicts
 
@@ -1591,10 +2594,53 @@ def set_client_tools(
     }
 
 
+def _project_name_slug(name: str) -> str:
+    """Slugify a project name into a kebab-case appId/folder-safe string."""
+    import re as _re
+
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return slug or "project"
+
+
+def _validate_project_name(name: Any) -> str:
+    """Normalize and validate a project name; raise ValueError with the reason."""
+    raw = "" if name is None else str(name).strip()
+    if not raw:
+        raise ValueError("values.name (project name) is required.")
+    placeholder = {
+        s.strip().lower()
+        for s in (
+            "example", "sample", "test", "demo", "my-app", "myproject",
+            "my-project", "app", "project", "template", "placeholder", "todo",
+            "untitled", "name", "project-name", "sdd", "sdd-template",
+            "sddshell", "shell",
+        )
+    }
+    if raw.lower() in placeholder:
+        raise ValueError(
+            f"values.name {raw!r} is a placeholder — provide the real project name "
+            "(e.g. 'myproject'), not a sample name."
+        )
+    import re as _re
+
+    slug = _project_name_slug(raw)
+    if len(slug) < 2 or not _re.search(r"[a-z]", slug):
+        raise ValueError(
+            "values.name must contain at least two letters (a pure number or "
+            "punctuation-only name is not a valid project name)."
+        )
+    return raw
+
+
 def set_project_stack(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
-    """Set frontend/backend/database stack choices."""
+    """Set frontend/backend/database stack choices and the project name.
+
+    The project name is required: the template never uses example or random
+    names — scaffolded appIds/folders derive from it. Pass it as
+    ``values.name`` (e.g. ``{"name": "myproject", "frontend": "react", ...}``).
+    """
     if not any(key in values for key in ("frontend", "backend", "database")):
         return {
             "mode": "SetProjectStack",
@@ -1603,7 +2649,15 @@ def set_project_stack(
                 "values.frontend, values.backend, or values.database is required."
             ],
         }
-    path = root / ".codex" / "project-profile.local.json"
+    try:
+        project_name = _validate_project_name(values.get("name"))
+    except ValueError as exc:
+        return {
+            "mode": "SetProjectStack",
+            "valid": False,
+            "errors": [str(exc)],
+        }
+    path = root / ".template" / "project-profile.local.json"
     current = read_json(path, optional=True)
     stack_raw = current.get("stack")
     stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
@@ -1630,19 +2684,25 @@ def set_project_stack(
     stack["testFrameworks"] = sorted(set(stack.get("testFrameworks", [])))
     stack["selectionRecorded"] = True
     current["$schema"] = current.get("$schema", "./project-profile.schema.json")
+    current["projectName"] = project_name
     current["stack"] = stack
     if not dry_run:
         write_json(path, current)
-        # Auto-generate Semgrep config after stack change
+        # Auto-generate Semgrep config + implementation scaffold after stack change
         set_semgrep_config(root, dry_run)
+        scaffold_project_files(root, dry_run)
 
-    # After stack is set, automatically trigger project guidance setup
+    # After stack is set, automatically trigger project guidance setup.
+    # interactive=True so the user is asked which skills to install (never
+    # auto-installed when no TTY confirmation is available).
     guidance_result: dict[str, Any] = {}
     if not dry_run:
         try:
             from .guidance import setup_project_guidance
 
-            guidance_result = setup_project_guidance(root, dict(values), dry_run)
+            guidance_result = setup_project_guidance(
+                root, dict(values), dry_run, interactive=True
+            )
         except Exception:
             guidance_result = {
                 "mode": "SetupProjectGuidance",
@@ -1654,20 +2714,22 @@ def set_project_stack(
         "mode": "SetProjectStack",
         "valid": True,
         "changed": True,
-        "path": ".codex/project-profile.local.json",
+        "path": ".template/project-profile.local.json",
         "dryRun": dry_run,
         "writeEnabled": not dry_run,
         "actions": [
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "stack",
                 "severity": "info",
-                "message": "Recorded frontend/backend/database stack choices.",
+                "message": f"Recorded project name {project_name!r} and frontend/backend/database stack choices.",
                 "phase": "apply",
             }
         ],
         "guidanceResult": guidance_result.get("valid", True),
         "guidanceDetails": guidance_result,
+        "scaffoldRequired": True,
+        "nextStage": "dev-flow-scaffold-project",
     }
 
 
@@ -1691,7 +2753,7 @@ def set_project_stack_metadata(
                 "metadataValidationStatus must be needs-user-validation or validated."
             ],
         }
-    path = root / ".codex" / "project-profile.local.json"
+    path = root / ".template" / "project-profile.local.json"
     current = read_json(path, optional=True)
     stack_raw = current.get("stack")
     stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
@@ -1705,12 +2767,12 @@ def set_project_stack_metadata(
         "mode": "SetProjectStackMetadata",
         "valid": True,
         "changed": True,
-        "path": ".codex/project-profile.local.json",
+        "path": ".template/project-profile.local.json",
         "dryRun": dry_run,
         "writeEnabled": not dry_run,
         "actions": [
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "stack.metadata",
                 "severity": "info",
                 "message": "Recorded project stack metadata for user validation.",
@@ -1724,7 +2786,7 @@ def set_quality_config(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Set quality configuration."""
-    path = root / ".codex" / "quality.local.json"
+    path = root / ".template" / "quality.local.json"
     if not values:
         return {
             "mode": "SetQualityConfig",
@@ -1833,7 +2895,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result = configure_result("SetSemgrepConfig", dry_run, write_enabled=not dry_run)
 
     # Read project profile
-    profile_path = root / ".codex" / "project-profile.local.json"
+    profile_path = root / ".template" / "project-profile.local.json"
     profile = read_json(profile_path, optional=True)
     stack = profile.get("stack", {}) if isinstance(profile.get("stack"), dict) else {}
 
@@ -1873,13 +2935,14 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "# Semgrep configuration for this project",
         "# Auto-generated by set-semgrep-config",
         "# Registry rules are pre-cached in the CI Docker image",
+        "#",
+        "# Single source of truth for active rule packs: .semgrep-rules.json",
+        "# (committed; CI reads it directly and fails loudly if it is missing).",
+        "# This file intentionally contains no rule list — keep it in sync via",
+        "# `python -m tools.sdd_cli configure set-semgrep-config`.",
         "",
         "rules: []",
-        "",
-        "# Active registry configs for this project:",
     ]
-    for rule in all_rules:
-        yml_lines.append(f"# - {rule}")
     yml_content = "\n".join(yml_lines) + "\n"
 
     # .semgrep-rules.json is consumed by CI (not gitignored)
@@ -1887,13 +2950,16 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     rules_payload = {"rules": all_rules}
 
     if not dry_run:
-        semgrep_yml_path.write_text(yml_content, encoding="utf-8")
+        # newline="\n": on Windows, text-mode write_text would translate LF
+        # to CRLF; the committed .semgrep.yml is LF (.editorconfig), so keep
+        # the generated file byte-identical to it.
+        semgrep_yml_path.write_text(yml_content, encoding="utf-8", newline="\n")
         result["actions"].append(
             {
                 "path": ".semgrep.yml",
                 "key": "config.written",
                 "severity": "info",
-                "message": f"Wrote .semgrep.yml with {len(all_rules)} rule pack(s): {', '.join(all_rules)}.",
+                "message": "Wrote .semgrep.yml (header-only; active rule packs in .semgrep-rules.json).",
                 "phase": "apply",
             }
         )
@@ -1919,7 +2985,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "path": ".semgrep.yml",
                 "key": "config.written",
                 "severity": "info",
-                "message": f"Would write .semgrep.yml with {len(all_rules)} rule pack(s): {', '.join(all_rules)}.",
+                "message": "Would write .semgrep.yml (header-only; active rule packs in .semgrep-rules.json).",
                 "phase": "apply",
             }
         )
@@ -1929,7 +2995,422 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
-# ── Provision Nexus repositories (sdd-artifacts raw hosted) ─────────────
+# ── Scaffold project implementation files ──────────────────────────────
+
+# Default shared-library skeletons materialized for a JS/TS stack (ADR-0002
+# packages/). Names are generic; content is the .template/scaffold/packages/node/
+# shape with `<pkgName>` substituted.
+_DEFAULT_PACKAGES = ("auth-lib", "ui-kit", "api-client")
+
+
+def _is_js_ts_stack(stack: dict[str, Any]) -> bool:
+    """True when the resolved stack is JavaScript/TypeScript."""
+    languages = stack.get("languages", []) or []
+    if any(lang in ("typescript", "javascript") for lang in languages):
+        return True
+    frameworks = stack.get("frameworks", []) or []
+    return any(
+        fw in ("react", "vue", "angular", "svelte", "next", "nuxt", "express", "node")
+        for fw in frameworks
+    )
+
+
+def _materialize_package_skeletons(
+    root: Path,
+    profile: dict[str, Any],
+    result: dict[str, Any],
+    dry_run: bool,
+) -> None:
+    """Copy the packages/ skeleton shape for the resolved stack, if applicable.
+
+    Stack-independent determinism only: this materializes the generic package
+    shapes from ``.template/scaffold/packages/<runtime>/`` (currently the node
+    shape: auth-lib, ui-kit, api-client) and substitutes the ``<pkgName>``
+    placeholder. Stack-specific package content is generated later by
+    ``dev-flow-scaffold-project``; this step never invents package logic.
+    Idempotent: an existing ``packages/<pkg>/`` is left unchanged.
+    """
+    stack = profile.get("stack", {}) or {}
+    if not _is_js_ts_stack(stack):
+        result["actions"].append(
+            {
+                "path": "packages/",
+                "key": "packages.shape-skip",
+                "severity": "info",
+                "message": (
+                    "No predefined packages/ shapes for this stack — shared "
+                    "libraries are generated per stack by dev-flow-scaffold-project."
+                ),
+                "phase": "apply",
+            }
+        )
+        return
+
+    shape = root / ".template" / "scaffold" / "packages" / "node"
+    if not shape.is_dir():
+        result["actions"].append(
+            {
+                "path": ".template/scaffold/packages/node",
+                "key": "packages.shape-missing",
+                "severity": "warning",
+                "message": "Node packages shape missing — skipping package skeleton generation.",
+                "phase": "apply",
+            }
+        )
+        return
+
+    for pkg in _DEFAULT_PACKAGES:
+        target = root / "packages" / pkg
+        if target.exists():
+            result["actions"].append(
+                {
+                    "path": f"packages/{pkg}",
+                    "key": "packages.exists",
+                    "severity": "info",
+                    "message": f"packages/{pkg}/ already exists — left unchanged.",
+                    "phase": "audit",
+                }
+            )
+            continue
+
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": f"packages/{pkg}",
+                    "key": "packages.would-create",
+                    "severity": "info",
+                    "message": f"Would create packages/{pkg}/ from the node skeleton shape.",
+                    "phase": "apply",
+                }
+            )
+            continue
+
+        import shutil as _shutil
+
+        _shutil.copytree(shape, target)
+        # Substitute the <pkgName> placeholder in every generated text file.
+        for file_path in target.rglob("*"):
+            if not file_path.is_file():
+                continue
+            try:
+                text = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if "<pkgName>" in text:
+                file_path.write_text(text.replace("<pkgName>", pkg), encoding="utf-8")
+        result["actions"].append(
+            {
+                "path": f"packages/{pkg}",
+                "key": "packages.created",
+                "severity": "info",
+                "message": f"Created packages/{pkg}/ skeleton (node shape).",
+                "phase": "apply",
+            }
+        )
+
+
+def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create the deterministic implementation skeleton after the stack is set.
+
+    The template repo is intentionally stack-agnostic. After the tech stack is
+    defined (set-project-stack), this step creates only the stack-independent
+    skeleton (ADR-0002): the ``apps/`` container for deployable applications
+    (one folder per app, each with ``src/``, ``deploy/``, and ``test/`` with
+    one subfolder per test type: ``unit``, ``integration``, ``e2e``,
+    ``architecture``), the ``packages/`` container for shared libraries, and
+    one layout app named from the project (``apps/<project-slug>-<role>/`` — the
+    marker is the project's web skeleton, so ``<project-slug>-web``) documenting
+    the expected per-app layout (falls back to ``apps/example/`` only when no
+    project name is recorded). Every stack-specific artifact (package.json, test
+    framework config, Dockerfiles,
+    CI workflows, k8s manifests) is delegated to the AI-driven
+    ``dev-flow-scaffold-project`` skill, which reads the stack from
+    project-profile.local.json and resolves what to scaffold — never a fixed
+    template list.
+    """
+    result = configure_result(
+        "ScaffoldProjectFiles", dry_run, write_enabled=not dry_run
+    )
+
+    # Product containers (ADR-0002, stack-independent): apps/ holds one folder
+    # per deployable application, packages/ holds shared libraries.
+    for folder in ("apps", "packages"):
+        folder_path = root / folder
+        if not folder_path.exists():
+            if not dry_run:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"{folder}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created {folder}/ product folder.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"{folder}/",
+                    "key": "folder.exists",
+                    "severity": "info",
+                    "message": f"{folder}/ already exists — left unchanged.",
+                    "phase": "audit",
+                }
+            )
+
+    # One app documenting the expected per-app layout (not 12 skeletons):
+    # src/, deploy/, and test/ with one subfolder per type. The app is named
+    # from the project (set-project-stack requires values.name) so the template
+    # never ships example or random names. Project-name prefix rule (ADR-0002
+    # naming): app folders/appIds are named <project-slug>-<role> — the layout
+    # marker is the project's web skeleton (role: web below). Real apps are
+    # scaffolded per stack by dev-flow-scaffold-project.
+    profile = load_project_profile(root)
+    project_name = str(profile.get("projectName") or "").strip()
+    project_slug = _project_name_slug(project_name) if project_name else ""
+    app_slug = f"{project_slug}-web" if project_slug else "example"
+    example = root / "apps" / app_slug
+    for folder in ("src", "deploy"):
+        folder_path = example / folder
+        if not folder_path.exists():
+            if not dry_run:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"apps/{app_slug}/{folder}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created apps/{app_slug}/{folder}/ scaffold folder.",
+                    "phase": "apply",
+                }
+            )
+    for sub in ("unit", "integration", "e2e", "architecture"):
+        sub_path = example / "test" / sub
+        if not sub_path.exists():
+            if not dry_run:
+                sub_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"apps/{app_slug}/test/{sub}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created apps/{app_slug}/test/{sub}/ test folder.",
+                    "phase": "apply",
+                }
+            )
+
+    # Per-app template-version marker (ADR-0002: versioning without Copier).
+    # templateVersion is a placeholder here — dev-flow-scaffold-project
+    # overwrites it per app when scaffolding the real stack.
+    marker = example / "app.json"
+    if not marker.exists():
+        if not dry_run:
+            write_json(
+                marker,
+                {
+                    "appId": app_slug,
+                    "role": "web",
+                    "healthPath": "/health",
+                    "templateVersion": "0.0.0",
+                },
+            )
+        result["actions"].append(
+            {
+                "path": f"apps/{app_slug}/app.json",
+                "key": "app.marker",
+                "severity": "info",
+                "message": f"Created apps/{app_slug}/app.json template-version marker.",
+                "phase": "apply",
+            }
+        )
+
+    # Shared-library skeletons (ADR-0002 packages/): when the resolved stack is
+    # JS/TS, materialize the default packages from .template/scaffold/packages/node/
+    # (auth-lib, ui-kit, api-client). Idempotent — existing packages are left
+    # unchanged. Other runtimes get an info note; their equivalent shapes are
+    # generated per stack by dev-flow-scaffold-project.
+    _materialize_package_skeletons(root, profile, result, dry_run)
+
+    # Delegate every stack-specific artifact to the AI scaffold skill.
+    # Warn when a legacy tests/ layout exists — all tests must live under each
+    # app's test/ with one subfolder per type (apps/<appId>/test/unit, ...).
+    legacy_tests = root / "tests"
+    if legacy_tests.is_dir():
+        result["actions"].append(
+            {
+                "path": "tests/",
+                "key": "folder.legacy-tests",
+                "severity": "warning",
+                "message": (
+                    "Legacy tests/ folder detected — all tests must live under "
+                    "each app's test/ (apps/<appId>/test/unit, test/integration, "
+                    "test/e2e, test/architecture). Move existing tests before pushing."
+                ),
+                "phase": "audit",
+            }
+        )
+
+    result["actions"].append(
+        {
+            "path": ".agents/skills/dev-flow-scaffold-project/SKILL.md",
+            "key": "stack.delegated",
+            "severity": "info",
+            "message": (
+                "Implementation scaffold (build manifests, test config, "
+                "Dockerfiles, CI, k8s) delegated to the dev-flow-scaffold-project "
+                "skill — the AI resolves what to generate from the selected stack."
+            ),
+            "phase": "apply",
+        }
+    )
+
+    result["valid"] = True
+    return result    # ── Provision Nexus repositories (sdd-artifacts, app-releases, docker-hosted) ──
+
+
+# ── Prune scaffold shapes once real apps exist ─────────────────────────
+
+
+# Kind -> scaffold shape path (relative to root). A shape is the starting
+# point for generated apps; once a real app of that kind is registered in
+# apps.json (implementation complete), the shape is redundant — the real app
+# becomes the reference (ADR-0005 lifecycle).
+_SCAFFOLD_KIND_SHAPES: dict[str, str] = {
+    "service": ".template/scaffold/apps/service",
+    "job": ".template/scaffold/apps/job",
+}
+
+# The db-bootstrap app has its own shape (engine-level bootstrap template).
+_DB_BOOTSTRAP_APP_ID = "db-bootstrap"
+_DB_BOOTSTRAP_SHAPE = ".template/scaffold/db-bootstrap"
+
+
+def prune_scaffold_shapes(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove scaffold shapes whose kind is now implemented by a real app.
+
+    Scaffold shapes in `.template/scaffold/` are starting points the AI
+    scaffold materializes into `apps/<appId>/`. Once a real app of a given
+    kind is registered in apps.json — the implementation-complete signal —
+    the corresponding shape is pruned so the template never carries starter
+    shapes alongside real implementations (ADR-0005). Runs after an
+    implementation finishes; the implementation skill calls this as a final
+    cleanup step.
+
+    Removal rules (per kind):
+
+    - any registered app with `kind: service` removes
+      `.template/scaffold/apps/service/`;
+    - any registered app with `kind: job` removes
+      `.template/scaffold/apps/job/`;
+    - a registered `db-bootstrap` app removes
+      `.template/scaffold/db-bootstrap/`.
+    """
+    import shutil as _shutil
+
+    result = configure_result(
+        "PruneScaffoldShapes", dry_run, write_enabled=not dry_run
+    )
+    apps_path = root / "infra" / "deployment" / "apps.json"
+    if not apps_path.exists():
+        result["valid"] = True
+        result["actions"].append(
+            {
+                "path": "infra/deployment/apps.json",
+                "key": "prune.skip",
+                "severity": "info",
+                "message": "apps.json missing — no app registry to prune against.",
+                "phase": "audit",
+            }
+        )
+        return result
+
+    try:
+        apps_data = json.loads(apps_path.read_text(encoding="utf-8"))
+        apps = apps_data.get("apps", []) if isinstance(apps_data, dict) else []
+    except json.JSONDecodeError as ex:
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/apps.json",
+            "parse.error",
+            f"apps.json is not valid JSON: {ex}",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Derive which shapes are now redundant from the registry. seen_targets
+    # dedupes so a duplicated appId in apps.json never emits duplicate actions.
+    targets: list[tuple[str, str]] = []  # (shape path, reason)
+    seen_kinds: set[str] = set()
+    seen_targets: set[str] = set()
+    for app in apps:
+        if not isinstance(app, dict):
+            continue
+        kind = app.get("kind")
+        app_id = str(app.get("appId") or "")
+        if kind in _SCAFFOLD_KIND_SHAPES and kind not in seen_kinds:
+            seen_kinds.add(kind)
+            targets.append(
+                (_SCAFFOLD_KIND_SHAPES[kind], f"registered {kind}-kind app")
+            )
+        if app_id == _DB_BOOTSTRAP_APP_ID:
+            targets.append(
+                (_DB_BOOTSTRAP_SHAPE, f"registered app '{_DB_BOOTSTRAP_APP_ID}'")
+            )
+    deduped: list[tuple[str, str]] = []
+    for shape_rel, reason in targets:
+        if shape_rel in seen_targets:
+            continue
+        seen_targets.add(shape_rel)
+        deduped.append((shape_rel, reason))
+    targets = deduped
+
+    if not targets:
+        result["actions"].append(
+            {
+                "path": ".template/scaffold/",
+                "key": "prune.none",
+                "severity": "info",
+                "message": "No scaffold shapes are redundant yet — apps.json registers "
+                "no apps (or only kinds without shapes).",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    for shape_rel, reason in targets:
+        shape = root / shape_rel
+        if not shape.exists():
+            result["actions"].append(
+                {
+                    "path": shape_rel,
+                    "key": "prune.missing",
+                    "severity": "info",
+                    "message": f"{shape_rel} already pruned ({reason}).",
+                    "phase": "audit",
+                }
+            )
+            continue
+        if not dry_run:
+            _shutil.rmtree(shape)
+        result["actions"].append(
+            {
+                "path": shape_rel,
+                "key": "prune.removed" if not dry_run else "prune.plan",
+                "severity": "info",
+                "message": f"Removed {shape_rel} — {reason}; the real app is the "
+                "reference now."
+                if not dry_run
+                else f"Would remove {shape_rel} — {reason}.",
+                "phase": "apply" if not dry_run else "audit",
+            }
+        )
+
+    result["valid"] = True
+    return result
 
 
 # ── Validate app deployment config ─────────────────────────────────────
@@ -2025,6 +3506,67 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
             result["valid"] = False
             return result
 
+    # Role registry (ADR-0004): infra/deployment/roles.json defines the role
+    # vocabulary + port ranges. Validate it against roles.schema.json so a
+    # consumer's custom-role edit fails the gate, not a later deploy.
+    roles_path = root / "infra" / "deployment" / "roles.json"
+    if not roles_path.exists():
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/roles.json",
+            "roles.missing",
+            "infra/deployment/roles.json not found — shipped defaults (web, api) apply.",
+            "warning",
+            "pre-start",
+        )
+    else:
+        try:
+            roles_data = json.loads(roles_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            add_bucket_item(
+                result["findings"],
+                "infra/deployment/roles.json",
+                "roles.parse.error",
+                f"roles.json is not valid JSON: {e}",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+        roles_schema_path = root / "infra" / "deployment" / "roles.schema.json"
+        if roles_schema_path.exists():
+            try:
+                import jsonschema
+
+                jsonschema.validate(
+                    instance=roles_data,
+                    schema=json.loads(
+                        roles_schema_path.read_text(encoding="utf-8")
+                    ),
+                )
+                result["actions"].append(
+                    {
+                        "path": "infra/deployment/roles.json",
+                        "key": "roles.schema.validated",
+                        "severity": "info",
+                        "message": "roles.json is valid against roles.schema.json.",
+                        "phase": "audit",
+                    }
+                )
+            except ImportError:
+                pass
+            except jsonschema.ValidationError as e:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/deployment/roles.json",
+                    "roles.schema.error",
+                    f"roles.json failed schema validation: {e.message}",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
+
     apps = apps_data.get("apps", [])
     if not isinstance(apps, list):
         add_bucket_item(
@@ -2039,8 +3581,33 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         return result
 
     all_valid = True
+
+    # Project-name prefix rule (ADR-0002 naming): every registered appId must
+    # start with "<project-slug>-" so apps are discoverable by project (e.g.
+    # project 'dellop' -> dellop-web, dellop-user-api). The fixed infra
+    # bootstrap job (db-bootstrap) is exempt. Skipped until a project name is
+    # recorded (template / pre-set-project-stack state).
+    profile = load_project_profile(root)
+    project_name = str(profile.get("projectName") or "").strip()
+    prefix = f"{_project_name_slug(project_name)}-" if project_name else None
+
     for i, app in enumerate(apps):
         app_id = app.get("appId", f"app[{i}]")
+        if prefix is not None and app_id != "db-bootstrap" and not app_id.startswith(
+            prefix
+        ):
+            add_bucket_item(
+                result["findings"],
+                f"infra/deployment/apps.json#{app_id}",
+                "appId.project-prefix",
+                f"App '{app_id}' must be prefixed with the project name "
+                f"(project {project_name!r} -> '{prefix}<role>', e.g. "
+                f"'{prefix}web' / '{prefix}api' / '{prefix}db'). The fixed infra "
+                "job 'db-bootstrap' is exempt.",
+                "error",
+                "pre-start",
+            )
+            all_valid = False
         project_path = app.get("projectPath", app_id)
         dockerfile = root / project_path / "Dockerfile"
         if not dockerfile.exists():
@@ -2070,6 +3637,58 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
+def _accept_nexus_eula(
+    nexus_base: str, user: str, password: str
+) -> tuple[bool, str]:
+    """Accept the Nexus EULA via the two-step /system/eula API (Nexus 3.92+).
+
+    Nexus 3.92+ removed the old one-shot ``/editions/eula/accept`` endpoint,
+    so a fresh install must: GET ``/service/rest/v1/system/eula``, then POST
+    the exact same JSON back with ``accepted: true``. The disclaimer text
+    contains smart quotes — it must be echoed unchanged or Nexus rejects it
+    with ``Invalid EULA disclaimer``. Idempotent: an already-accepted EULA
+    counts as success. For pre-3.92 installs (no ``/system/eula`` endpoint)
+    it falls back to the legacy one-shot endpoint.
+
+    Returns ``(ok, detail)``; ``ok`` is True when the EULA is accepted.
+    """
+
+    def _api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        return http_json(
+            method, f"{nexus_base}{path}", body=body, basic=(user, password)
+        )
+
+    # Step 1: GET the current EULA status (includes the disclaimer text).
+    status, data = _api("GET", "/service/rest/v1/system/eula")
+    if status == 200:
+        try:
+            eula = json.loads(data)
+        except json.JSONDecodeError:
+            return False, f"Could not parse EULA response: {data[:200]}"
+        if not isinstance(eula, dict):
+            return False, f"Unexpected EULA response shape: {data[:200]}"
+        if eula.get("accepted"):
+            return True, "already accepted"
+        # Step 2: POST it back with accepted=true, preserving the disclaimer
+        # exactly (json.dumps keeps the smart quotes as-is).
+        eula["accepted"] = True
+        post_status, post_data = _api("POST", "/service/rest/v1/system/eula", body=eula)
+        if post_status in {200, 204}:
+            return True, f"accepted via /system/eula (HTTP {post_status})"
+        return False, f"POST /system/eula returned {post_status}: {post_data[:200]}"
+    if status == 404:
+        # Pre-3.92 Nexus: fall back to the legacy one-shot endpoint.
+        legacy_status, legacy_data = _api(
+            "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
+        )
+        if legacy_status in {200, 204}:
+            return True, "accepted via legacy endpoint"
+        if legacy_status in {400, 404}:
+            return True, "already accepted (legacy endpoint)"
+        return False, f"legacy EULA endpoint returned {legacy_status}: {legacy_data[:200]}"
+    return False, f"GET /system/eula returned {status}: {data[:200]}"
+
+
 def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create required Nexus raw hosted repositories for CI artifacts.
 
@@ -2084,16 +3703,35 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     nexus_user = "admin"
     # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
     # Try to read it from the running container; fall back to admin123 (manually set or old install).
+    # Password resolution chain: 1) persisted value in client-tools.local.json
+    # (written by provision_lab_users after changing it), 2) the generated
+    # password file on a fresh install, 3) the default admin123.
     nexus_pass = "admin123"
-    try:
-        r = subprocess.run(
-            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            nexus_pass = r.stdout.strip()
-    except Exception:
-        pass
+    _cfg = read_json(root / ".template" / "client-tools.local.json", optional=True) or {}
+    _cfg_pass = (_cfg.get("nexus") or {}).get("password", "")
+    if _cfg_pass and "replace-with" not in _cfg_pass:
+        nexus_pass = _cfg_pass
+    else:
+        try:
+            r = subprocess.run(
+                ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                nexus_pass = r.stdout.strip()
+        except Exception:
+            pass
+
+    # Also save Nexus password to client-tools.local.json for persistence
+    if not dry_run and nexus_pass:
+        try:
+            _cfg_path = root / ".template" / "client-tools.local.json"
+            _cfg = read_json(_cfg_path, optional=True) or {}
+            _cfg.setdefault("nexus", {})["password"] = nexus_pass
+            _cfg["nexus"].setdefault("baseUrl", nexus_base)
+            write_json(_cfg_path, _cfg)
+        except Exception:
+            pass
 
     if dry_run:
         result["actions"].append(
@@ -2101,7 +3739,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "path": "nexus/repositories",
                 "key": "plan",
                 "severity": "info",
-                "message": "Would create Nexus raw hosted repository: sdd-artifacts.",
+                "message": "Would create Nexus repositories: sdd-artifacts, app-releases, docker-hosted (port 5001).",
                 "phase": "apply",
             }
         )
@@ -2109,39 +3747,25 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         return result
 
     def _nexus_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
-        try:
-            parsed = urlparse(nexus_base)
-            conn = http.client.HTTPConnection(
-                parsed.hostname or "localhost", parsed.port or 8088, timeout=10
-            )
-            import base64
-
-            b64 = base64.b64encode(f"{nexus_user}:{nexus_pass}".encode()).decode()
-            headers = {
-                "Authorization": f"Basic {b64}",
-                "Content-Type": "application/json",
-            }
-            payload = json.dumps(body) if body else None
-            conn.request(method, path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read().decode("utf-8")
-            conn.close()
-            return resp.status, data
-        except Exception as ex:
-            return 0, str(ex)
+        return http_json(
+            method,
+            f"{nexus_base}{path}",
+            body=body,
+            basic=(nexus_user, nexus_pass),
+        )
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
-    eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
-    )
-    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
-    if eula_status in {204, 200, 400, 404}:
+    # Nexus 3.92+ removed the one-shot /editions/eula/accept endpoint, so use
+    # the two-step flow: GET /system/eula, then POST it back with accepted:true
+    # (the disclaimer, incl. smart quotes, must be echoed unchanged).
+    _eula_ok, _eula_detail = _accept_nexus_eula(nexus_base, nexus_user, nexus_pass)
+    if _eula_ok:
         result["actions"].append(
             {
                 "path": "nexus/eula",
                 "key": "eula.accepted",
                 "severity": "info",
-                "message": "Nexus EULA accepted.",
+                "message": f"Nexus EULA accepted ({_eula_detail}).",
                 "phase": "apply",
             }
         )
@@ -2150,7 +3774,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             result["findings"],
             "nexus/eula",
             "eula.accept",
-            f"Nexus EULA acceptance returned {eula_status}: {eula_data[:200]}",
+            f"Nexus EULA acceptance failed: {_eula_detail}",
             "warning",
             "apply",
         )
@@ -2180,7 +3804,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "phase": "apply",
             }
         )
-    elif status == 400 and "already exists" in data:
+    elif status == 400 and ("already exists" in data or "already used" in data):
         result["actions"].append(
             {
                 "path": f"nexus/repositories/{repo_name}",
@@ -2196,6 +3820,156 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             f"nexus/repositories/{repo_name}",
             "repository.create",
             f"Nexus repository creation returned {status}: {data[:200]}",
+            "warning",
+            "apply",
+        )
+
+    # ── 3. Create app-releases raw hosted repository (for release manifests) ──
+    repo_name_rel = "app-releases"
+    repo_payload_rel = {
+        "name": repo_name_rel,
+        "online": True,
+        "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": True,
+            "writePolicy": "ALLOW",
+        },
+    }
+
+    status_rel, data_rel = _nexus_api(
+        "POST", "/service/rest/v1/repositories/raw/hosted", body=repo_payload_rel
+    )
+    if status_rel == 201:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_rel}",
+                "key": "repository.created",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name_rel}' created.",
+                "phase": "apply",
+            }
+        )
+    elif status_rel == 400 and ("already exists" in data_rel or "already used" in data_rel):
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_rel}",
+                "key": "repository.exists",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name_rel}' already exists.",
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            f"nexus/repositories/{repo_name_rel}",
+            "repository.create",
+            f"Nexus repository creation returned {status_rel}: {data_rel[:200]}",
+            "warning",
+            "apply",
+        )
+
+    # ── 4. Create docker-hosted Docker registry repository (port 5001) ──
+    # The CI pipeline pushes container images to host.docker.internal:5001.
+    # forceBasicAuth=true makes Nexus challenge with BASIC auth — the default
+    # Bearer-token flow (with its full-URL service value) is rejected by the
+    # Docker daemon, so docker login/push would 401. httpPort 5001 matches the
+    # port mapping in infra/nexus/compose.yml (5001:5001).
+    repo_name_docker = "docker-hosted"
+    repo_payload_docker = {
+        "name": repo_name_docker,
+        "online": True,
+        "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": True,
+            "writePolicy": "ALLOW",
+        },
+        "docker": {
+            "httpPort": 5001,
+            "httpsPort": None,
+            "forceBasicAuth": True,
+            "v1Enabled": False,
+            "subdomain": None,
+        },
+    }
+
+    status_docker, data_docker = _nexus_api(
+        "POST",
+        "/service/rest/v1/repositories/docker/hosted",
+        body=repo_payload_docker,
+    )
+    if status_docker == 201:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_docker}",
+                "key": "repository.created",
+                "severity": "info",
+                "message": f"Nexus docker hosted repository '{repo_name_docker}' created (port 5001).",
+                "phase": "apply",
+            }
+        )
+    elif status_docker == 400 and (
+        "already exists" in data_docker or "already used" in data_docker
+    ):
+        # Idempotent: reconcile the existing repo's config so the CI registry
+        # works (a repo without the 5001 connector or Basic auth is dead on
+        # 5001). Nexus GETs don't expose the docker connector config reliably,
+        # so any unverifiable state is re-applied via PUT; only a config that
+        # verifiably matches is left untouched.
+        get_status, get_data = _nexus_api(
+            "GET", f"/service/rest/v1/repositories/{repo_name_docker}"
+        )
+        needs_update = True
+        if get_status == 200:
+            try:
+                _existing = json.loads(get_data)
+                _docker_cfg = _existing.get("docker") or {}
+                needs_update = _docker_cfg.get("httpPort") != 5001 or not _docker_cfg.get(
+                    "forceBasicAuth"
+                )
+            except json.JSONDecodeError:
+                needs_update = True
+        if needs_update:
+            put_status, put_data = _nexus_api(
+                "PUT",
+                f"/service/rest/v1/repositories/docker/hosted/{repo_name_docker}",
+                body=repo_payload_docker,
+            )
+            if put_status in {200, 204}:
+                result["actions"].append(
+                    {
+                        "path": f"nexus/repositories/{repo_name_docker}",
+                        "key": "repository.updated",
+                        "severity": "info",
+                        "message": f"Nexus docker hosted repository '{repo_name_docker}' updated (port 5001 + Basic auth).",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    f"nexus/repositories/{repo_name_docker}",
+                    "repository.update",
+                    f"Nexus repository update returned {put_status}: {put_data[:200]}",
+                    "warning",
+                    "apply",
+                )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"nexus/repositories/{repo_name_docker}",
+                    "key": "repository.exists",
+                    "severity": "info",
+                    "message": f"Nexus docker hosted repository '{repo_name_docker}' already exists (port 5001).",
+                    "phase": "apply",
+                }
+            )
+    else:
+        add_bucket_item(
+            result["findings"],
+            f"nexus/repositories/{repo_name_docker}",
+            "repository.create",
+            f"Nexus repository creation returned {status_docker}: {data_docker[:200]}",
             "warning",
             "apply",
         )
@@ -2467,7 +4241,7 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
     required_tools = [
         ("git", ["git", "--version"]),
         ("node", ["node", "--version"]),
-        ("npm", ["npm", "--version"]),
+        ("npm", native_command("npm") + ["--version"]),
         ("sh", ["sh", "-c", "echo ok"]),
     ]
     for tool_name, tool_cmd in required_tools:
@@ -2566,14 +4340,36 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     }
                 )
             else:
-                add_bucket_item(
-                    result["findings"],
-                    "gitea",
-                    "network.unreachable",
-                    f"Gitea instance {instance_url} is not reachable.",
-                    "warning",
-                    "post-start",
-                )
+                # The instance URL is often the internal Docker hostname
+                # (http://gitea:3000), which only resolves inside the compose
+                # network. From the host, fall back to the published port.
+                try:
+                    _port = urlparse(instance_url).port or 3000
+                except Exception:
+                    _port = 3000
+                host_url = f"http://localhost:{_port}"
+                host_status, _ = http_status(host_url + "/api/healthz", timeout=5)
+                if host_status is not None and host_status < 500:
+                    result["actions"].append(
+                        {
+                            "path": "gitea",
+                            "key": "network",
+                            "severity": "info",
+                            "message": f"Gitea internal URL {instance_url} not reachable from host; "
+                                       f"published port reachable at {host_url}.",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        "gitea",
+                        "network.unreachable",
+                        f"Gitea instance {instance_url} is not reachable (host fallback {host_url} "
+                        f"also failed: HTTP {host_status}).",
+                        "warning",
+                        "post-start",
+                    )
         elif instance_url:
             result["actions"].append(
                 {
@@ -2704,28 +4500,12 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # ── Helper: Gitea API call ───────────────────────────────────────
     def _gitea_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
-        try:
-            parsed = urlparse(gitea_base)
-            conn = http.client.HTTPConnection(
-                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
-            )
-            import base64
-
-            b64_auth = base64.b64encode(
-                f"{gitea_admin_user}:{gitea_admin_pass}".encode()
-            ).decode()
-            headers = {
-                "Authorization": f"Basic {b64_auth}",
-                "Content-Type": "application/json",
-            }
-            payload = json.dumps(body) if body else None
-            conn.request(method, path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read().decode("utf-8")
-            conn.close()
-            return resp.status, data
-        except Exception as ex:
-            return 0, str(ex)
+        return http_json(
+            method,
+            f"{gitea_base}{path}",
+            body=body,
+            basic=(gitea_admin_user, gitea_admin_pass),
+        )
 
     # ── Helper: OpenProject API call (uses Bearer token from client-tools) ──
     # OpenProject API v3 does NOT accept Basic auth with admin:admin — it requires
@@ -2751,7 +4531,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     break
             # Also save to client-tools.local.json for persistence
             try:
-                config_path = root / ".codex" / "client-tools.local.json"
+                config_path = root / ".template" / "client-tools.local.json"
                 config = read_json(config_path, optional=True) or {}
                 op_config = config.setdefault("openProject", {})
                 op_config["apiToken"] = _op_token
@@ -2770,12 +4550,11 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         nonlocal _op_token
-        import base64
 
         # Read API token on first call
         if _op_token is None:
             try:
-                config_path = root / ".codex" / "client-tools.local.json"
+                config_path = root / ".template" / "client-tools.local.json"
                 config = read_json(config_path, optional=True)
                 op_config = (
                     config.get("openProject", config.get("openproject", {}))
@@ -2785,136 +4564,21 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 _op_token = op_config.get("apiToken", "")
             except Exception:
                 _op_token = ""
-        try:
-            parsed = urlparse(op_base)
-            conn = http.client.HTTPConnection(
-                parsed.hostname or "localhost", parsed.port or 8080, timeout=10
-            )
-            if _op_token:
-                headers = {
-                    "Authorization": f"Bearer {_op_token}",
-                    "Content-Type": "application/json",
-                }
-            else:
-                # Fallback to Basic auth
-                auth = base64.b64encode(
-                    f"{op_admin_user}:{op_admin_pass}".encode()
-                ).decode()
-                headers = {
-                    "Authorization": f"Basic {auth}",
-                    "Content-Type": "application/json",
-                }
-            payload = json.dumps(body) if body else None
-            conn.request(method, path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read().decode("utf-8")
-            conn.close()
-            return resp.status, data
-        except Exception as ex:
-            return 0, str(ex)
+        if _op_token:
+            return http_json(method, f"{op_base}{path}", body=body, bearer=_op_token)
+        # Fallback to Basic auth
+        return http_json(
+            method,
+            f"{op_base}{path}",
+            body=body,
+            basic=(op_admin_user, op_admin_pass),
+        )
 
     # ── Helper: Nexus API call ────────────────────────────────────────
     def _nexus_api(
         method: str, path: str, body: dict | None = None, auth: tuple | None = None
     ) -> tuple[int, str]:
-        try:
-            parsed = urlparse(nexus_base)
-            conn = http.client.HTTPConnection(
-                parsed.hostname or "localhost", parsed.port or 8088, timeout=10
-            )
-            headers = {"Content-Type": "application/json"}
-            payload = json.dumps(body) if body else None
-            if auth:
-                import base64
-
-                b64 = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
-                headers["Authorization"] = f"Basic {b64}"
-            conn.request(method, path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read().decode("utf-8")
-            conn.close()
-            return resp.status, data
-        except Exception as ex:
-            return 0, str(ex)
-
-    # ── 0. Gitea: generate runner registration token and write to runner.env ──
-    # This is required for the act_runner to connect to Gitea
-    # Resolve owner/repo from client-tools config or use safe default
-    _client_cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True)
-    _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
-    _owner = _gitea_cfg.get("owner", "sdd-admin")
-    _repo = _gitea_cfg.get("repo", "sdd-test")
-    runner_token_path = root / "infra" / "gitea" / "runner.env"
-    if runner_token_path.exists():
-        runner_env = read_env_file(runner_token_path)
-        existing_token = runner_env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "")
-        if not existing_token or existing_token.startswith("replace-with"):
-            reg_status, reg_data = _gitea_api(
-                "POST",
-                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
-            )
-            if reg_status == 200 or reg_status == 201:
-                try:
-                    reg_json = json.loads(reg_data)
-                    token = reg_json.get("token", "")
-                    if token:
-                        runner_env["GITEA_RUNNER_REGISTRATION_TOKEN"] = token
-                        write_env_file(runner_token_path, runner_env)
-                        result["actions"].append(
-                            {
-                                "path": "infra/gitea/runner.env",
-                                "key": "registration.token",
-                                "severity": "info",
-                                "message": "Gitea runner registration token written to runner.env.",
-                                "phase": "apply",
-                            }
-                        )
-                        # Restart runner container to pick up new token
-                        _restart = run_native(
-                            ["docker", "restart", "agentic-gitea-runner"],
-                            root,
-                            timeout=30,
-                        )
-                        if _restart["returncode"] == 0:
-                            result["actions"].append(
-                                {
-                                    "path": "docker/container/agentic-gitea-runner",
-                                    "key": "runner.restart",
-                                    "severity": "info",
-                                    "message": "Restarted Gitea runner container to pick up new registration token.",
-                                    "phase": "apply",
-                                }
-                            )
-                        else:
-                            add_bucket_item(
-                                result["findings"],
-                                "docker/container/agentic-gitea-runner",
-                                "runner.restart",
-                                f"Could not restart Gitea runner: {_restart['stderr']}",
-                                "warning",
-                                "apply",
-                            )
-                except Exception:
-                    pass
-            else:
-                add_bucket_item(
-                    result["findings"],
-                    "infra/gitea/runner.env",
-                    "registration.token",
-                    f"Could not generate runner registration token: Gitea returned {reg_status}.",
-                    "warning",
-                    "apply",
-                )
-        else:
-            result["actions"].append(
-                {
-                    "path": "infra/gitea/runner.env",
-                    "key": "registration.token",
-                    "severity": "info",
-                    "message": "Runner registration token already exists.",
-                    "phase": "audit",
-                }
-            )
+        return http_json(method, f"{nexus_base}{path}", body=body, basic=auth)
 
     # ── 1. Gitea: create users FirstUser, SecondUser ──────────────────
     gitea_users = [
@@ -2933,7 +4597,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     ]
     for u in gitea_users:
         status, data = _gitea_api("POST", "/api/v1/admin/users", body=u)
-        if status in {201, 409}:
+        # 422 with "already exists" means the user was created by an earlier
+        # run — treat it as ready so re-runs stay warning-free.
+        if status in {201, 409} or (status == 422 and "already exists" in data):
             result["actions"].append(
                 {
                     "path": f"gitea/users/{u['username']}",
@@ -2974,7 +4640,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         })
         # Update client-tools.local.json with actual owner/repo
         try:
-            _config_path = root / ".codex" / "client-tools.local.json"
+            _config_path = root / ".template" / "client-tools.local.json"
             _config = read_json(_config_path, optional=True) or {}
             _gitea_section = _config.setdefault("gitea", {})
             _gitea_section["owner"] = _gitea_owner
@@ -2982,14 +4648,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             _gitea_section.setdefault("baseUrl", "http://localhost:3000")
             write_json(_config_path, _config)
             result["actions"].append({
-                "path": ".codex/client-tools.local.json/gitea",
+                "path": ".template/client-tools.local.json/gitea",
                 "key": "config.updated",
                 "severity": "info",
                 "message": f"Updated client-tools: owner={_gitea_owner}, repo={_gitea_repo}",
                 "phase": "apply",
             })
         except Exception as _ex:
-            add_bucket_item(result["findings"], ".codex/client-tools.local.json",
+            add_bucket_item(result["findings"], ".template/client-tools.local.json",
                            "config.update", f"Could not update config: {_ex}",
                            "warning", "apply")
     else:
@@ -2997,7 +4663,118 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                        "repo.create", f"Repo creation returned {_repo_status}: {_repo_data[:200]}",
                        "warning", "apply")
 
-    # ── 1c. Gitea: generate API token with write scopes ──────────────
+    # ── 1c. Gitea: generate runner registration token and write to runner.env ──
+    # This is required for the act_runner to connect to Gitea. Runs AFTER the
+    # repo exists (step 1b) so the registration-token endpoint returns 201 and
+    # client-tools.local.json carries the real owner/repo.
+    # The token is written to BOTH runner env files:
+    #   infra/gitea/runner.env - canonical copy (used by tooling)
+    #   infra/runner.env       - the file the compose runner actually reads
+    #                            (env_file: ./runner.env, project dir = infra/)
+    _client_cfg = read_json(root / ".template" / "client-tools.local.json", optional=True)
+    _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
+    _owner = _gitea_cfg.get("owner", "sdd-admin")
+    _repo = _gitea_cfg.get("repo", "sdd-test")
+    runner_token_paths = [
+        root / "infra" / "gitea" / "runner.env",
+        root / "infra" / "runner.env",
+    ]
+    _primary_token_path = runner_token_paths[0]
+    if _primary_token_path.exists():
+        runner_env = read_env_file(_primary_token_path)
+        existing_token = runner_env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "")
+        if not existing_token or existing_token.startswith("replace-with"):
+            reg_status, reg_data = _gitea_api(
+                "POST",
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
+            )
+            if reg_status == 200 or reg_status == 201:
+                try:
+                    reg_json = json.loads(reg_data)
+                    token = reg_json.get("token", "")
+                    if token:
+                        for _path in runner_token_paths:
+                            _env = read_env_file(_path)
+                            _env["GITEA_RUNNER_REGISTRATION_TOKEN"] = token
+                            write_env_file(_path, _env)
+                        result["actions"].append(
+                            {
+                                "path": "infra/runner.env",
+                                "key": "registration.token",
+                                "severity": "info",
+                                "message": "Gitea runner registration token written to infra/runner.env and infra/gitea/runner.env.",
+                                "phase": "apply",
+                            }
+                        )
+                        # Recreate the runner container so compose re-reads the
+                        # env_file (a plain `docker restart` keeps the old env).
+                        _restart = run_native(
+                            [
+                                "docker", "compose",
+                                "--env-file", str(root / "infra" / "openproject" / "variables.env"),
+                                "--env-file", str(root / "infra" / "monitoring" / "variables.env"),
+                                "-f", str(root / "infra" / "compose.yml"),
+                                "--project-directory", str(root / "infra"),
+                                "up", "-d", "--no-deps", "runner",
+                            ],
+                            root,
+                            timeout=120,
+                        )
+                        if _restart["returncode"] == 0:
+                            result["actions"].append(
+                                {
+                                    "path": "docker/container/agentic-gitea-runner",
+                                    "key": "runner.restart",
+                                    "severity": "info",
+                                    "message": "Recreated Gitea runner container to pick up the new registration token.",
+                                    "phase": "apply",
+                                }
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                "docker/container/agentic-gitea-runner",
+                                "runner.restart",
+                                f"Could not recreate Gitea runner: {_restart['stderr']}",
+                                "warning",
+                                "apply",
+                            )
+                except Exception:
+                    pass
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/gitea/runner.env",
+                    "registration.token",
+                    f"Could not generate runner registration token: Gitea returned {reg_status}.",
+                    "warning",
+                    "apply",
+                )
+        else:
+            # Token already exists in the canonical file. Keep it, but make
+            # sure the secondary copy (infra/runner.env) stays in sync so a
+            # later recreate never reads a stale/different token.
+            _synced = False
+            for _path in runner_token_paths[1:]:
+                _env = read_env_file(_path)
+                if _env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "") != existing_token:
+                    _env["GITEA_RUNNER_REGISTRATION_TOKEN"] = existing_token
+                    write_env_file(_path, _env)
+                    _synced = True
+            result["actions"].append(
+                {
+                    "path": "infra/gitea/runner.env",
+                    "key": "registration.token",
+                    "severity": "info",
+                    "message": (
+                        "Runner registration token already exists"
+                        + (", synced to infra/runner.env." if _synced else ".")
+                    ),
+                    "phase": "audit",
+                }
+            )
+
+    # ── 1d. Gitea: generate API token with write scopes ──────────────
     #     This token is used by agents to create PRs, add labels, request reviewers.
     _api_token_result = generate_gitea_api_token(root, dry_run)
     for action in _api_token_result.get("actions", []):
@@ -3631,53 +5408,146 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
 
     # ── 6. Nexus: set admin password via REST API ─────────────────────
-    # First attempt with default admin/admin123, use the same as desired password
-    # Nexus default: admin / admin123, then change password = new password
-    # PUT /service/rest/v1/security/users/admin/change-password
-    status, data = _nexus_api(
-        "PUT",
-        "/service/rest/v1/security/users/admin/change-password",
-        body={"password": "admin123"},
-        auth=("admin", "admin123"),
-    )
-    if status in {200, 204, 404, 401}:
-        # 404 or 401 means default password may already be set or different API version
-        # Try GET /service/rest/v1/security/users to verify connectivity
-        status2, _ = _nexus_api(
-            "GET", "/service/rest/v1/security/users", auth=("admin", "admin123")
+    # On first boot, Nexus generates a random admin password stored in
+    # /nexus-data/admin.password. Read it from the container first, then
+    # use it to authenticate and change to a known value (admin123).
+    # NOTE: the change-password endpoint consumes text/plain (the raw new
+    # password string) — sending JSON yields HTTP 415 Unsupported Media Type.
+    _nexus_initial_pass = "admin123"
+    try:
+        _r = subprocess.run(
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            capture_output=True, text=True, timeout=10,
         )
-        if status2 in {200, 401}:
-            result["actions"].append(
-                {
-                    "path": "nexus/users/admin",
-                    "key": "password.set",
-                    "severity": "info",
-                    "message": "Nexus admin password set/verified to admin123.",
-                    "phase": "apply",
-                }
+        if _r.returncode == 0 and _r.stdout.strip():
+            _nexus_initial_pass = _r.stdout.strip()
+    except Exception:
+        pass
+
+    def _nexus_change_password(user: str, password: str) -> tuple[int, str]:
+        """PUT change-password with a text/plain body (the raw new password)."""
+        try:
+            import base64
+
+            _parsed = urlparse(nexus_base)
+            _conn = http.client.HTTPConnection(
+                _parsed.hostname or "localhost", _parsed.port or 8088, timeout=15
             )
-        else:
-            add_bucket_item(
-                result["findings"],
-                "nexus/users/admin",
-                "password.set",
-                f"Nexus admin password change returned {status}/{status2}",
-                "warning",
-                "apply",
+            _token = base64.b64encode(f"{user}:{password}".encode()).decode()
+            _conn.request(
+                "PUT",
+                "/service/rest/v1/security/users/admin/change-password",
+                body="admin123",
+                headers={
+                    "Content-Type": "text/plain",
+                    "Authorization": f"Basic {_token}",
+                },
             )
-    else:
+            _resp = _conn.getresponse()
+            _data = _resp.read().decode("utf-8", "replace")
+            _conn.close()
+            return _resp.status, _data
+        except Exception as _ex:
+            return 0, str(_ex)
+
+    # Accept the Nexus EULA first — required for API access on a truly fresh
+    # install. Nexus 3.92+ requires the two-step /system/eula flow (GET then
+    # POST back with accepted:true); the legacy one-shot endpoint is removed.
+    _eula_ok, _eula_detail = _accept_nexus_eula(
+        nexus_base, "admin", _nexus_initial_pass or "admin123"
+    )
+    if not _eula_ok:
         add_bucket_item(
             result["findings"],
-            "nexus/users/admin",
-            "password.set",
-            f"Nexus admin password change returned {status}: {data[:200]}",
+            "nexus/eula",
+            "eula.accept",
+            f"Nexus EULA acceptance failed: {_eula_detail}",
             "warning",
             "apply",
         )
 
+    # Step 1: try to authenticate with the discovered (or default) password
+    # and change it to admin123.
+    _change_ok = False
+    for _attempt_pass in [_nexus_initial_pass, "admin123"]:
+        _status, _data = _nexus_change_password("admin", _attempt_pass)
+        if _status in {200, 204}:
+            _change_ok = True
+            break
+        # 404 means change-password endpoint doesn't exist (older Nexus version)
+        # 401 means wrong password — try next fallback
+        if _status != 401 and _status != 404:
+            break
+
+    # Step 2: verify admin:admin123 works
+    _verify_status, _ = _nexus_api(
+        "GET", "/service/rest/v1/security/users", auth=("admin", "admin123")
+    )
+    if _verify_status == 200 and _change_ok:
+        result["actions"].append(
+            {
+                "path": "nexus/users/admin",
+                "key": "password.set",
+                "severity": "info",
+                "message": "Nexus admin password set to admin123.",
+                "phase": "apply",
+            }
+        )
+    else:
+        _reason = (
+            "password change API call failed" if not _change_ok
+            else "verify GET returned non-200 (credentials may be wrong)"
+        )
+        add_bucket_item(
+            result["findings"],
+            "nexus/users/admin",
+            "password.set",
+            f"Nexus admin password change: {_reason}."
+            f" change_ok={_change_ok}, verify_status={_verify_status}."
+            " The admin password may still be the auto-generated one from /nexus-data/admin.password.",
+            "warning",
+            "apply",
+        )
+
+    # Step 3: complete remaining Nexus onboarding items so the UI does not
+    # force first-login prompts ("Set the admin password", "Configure
+    # anonymous access"). The ConfigureAnonymousAccess item is completed via
+    # the public anonymous-access API (safe lab default: anonymous disabled).
+    if _verify_status == 200:
+        _anon_status, _ = _nexus_api(
+            "PUT",
+            "/service/rest/v1/security/anonymous",
+            body={
+                "enabled": False,
+                "userId": "anonymous",
+                "realmName": "NexusAuthorizingRealm",
+            },
+            auth=("admin", "admin123"),
+        )
+        if _anon_status == 200:
+            result["actions"].append(
+                {
+                    "path": "nexus/onboarding",
+                    "key": "onboarding.completed",
+                    "severity": "info",
+                    "message": "Nexus onboarding completed (anonymous access disabled).",
+                    "phase": "apply",
+                }
+            )
+        # Persist the working admin password so later steps (e.g.
+        # provision_nexus_repositories) authenticate with admin123.
+        try:
+            _cfg_path = root / ".template" / "client-tools.local.json"
+            _cfg = read_json(_cfg_path, optional=True) or {}
+            _cfg.setdefault("nexus", {})["password"] = "admin123"
+            _cfg["nexus"].setdefault("baseUrl", nexus_base)
+            write_json(_cfg_path, _cfg)
+        except Exception:
+            pass
+
     # ── 4. Save provisioning config to client-tools.local.json ────────
     if not dry_run:
-        config_path = root / ".codex" / "client-tools.local.json"
+        config_path = root / ".template" / "client-tools.local.json"
         config = read_json(config_path, optional=True)
 
         # Merge provisioning info into openProject section
@@ -3694,6 +5564,16 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         }
         config.setdefault("openProject", {})
         config["openProject"]["provisioning"] = op_provision
+        # Top-level projectIdentifier is what the OpenProject MCP/ticket flow
+        # reads (GET /api/v3/projects/{projectIdentifier}). Keep it in sync with
+        # the provisioned project so setup-lab self-heals the example placeholder
+        # — but only when unset/placeholder, preserving a user-set identifier
+        # (same "keep existing" convention as ensure_openproject_env).
+        _current_identifier = str(
+            config["openProject"].get("projectIdentifier", "") or ""
+        ).strip()
+        if not _current_identifier or _current_identifier.startswith("replace-with"):
+            config["openProject"]["projectIdentifier"] = op_provision["project"]["identifier"]
 
         # Also save Gitea provisioning info
         gitea_provision = {
@@ -3713,10 +5593,15 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         config.setdefault("gitea", {})
         config["gitea"]["provisioning"] = gitea_provision
 
+        # Also save Nexus password
+        nexus_config = config.setdefault("nexus", {})
+        nexus_config["password"] = "admin123"
+        nexus_config.setdefault("baseUrl", "http://localhost:8088")
+
         write_json(config_path, config)
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json",
+                "path": ".template/client-tools.local.json",
                 "key": "config.saved",
                 "severity": "info",
                 "message": "Saved provisioning config (project, board with plain lists, users).",
@@ -3767,11 +5652,8 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
         result["valid"] = True
         return result
 
-    import base64
-    from urllib.parse import urlparse
-
     # Resolve owner/repo from client-tools.local.json or default
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea_cfg = client.get("gitea", {})
     owner = gitea_cfg.get("owner", "sdd-admin")
     repo = gitea_cfg.get("repo", "sdd-test")
@@ -3779,26 +5661,12 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     def _gitea_actions_api(
         method: str, path: str, body: dict | None = None
     ) -> tuple[int, str]:
-        try:
-            parsed = urlparse(gitea_base)
-            conn = http.client.HTTPConnection(
-                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
-            )
-            b64_auth = base64.b64encode(
-                f"{gitea_admin_user}:{gitea_admin_pass}".encode()
-            ).decode()
-            headers = {
-                "Authorization": f"Basic {b64_auth}",
-                "Content-Type": "application/json",
-            }
-            payload = json.dumps(body) if body else None
-            conn.request(method, path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read().decode("utf-8")
-            conn.close()
-            return resp.status, data
-        except Exception as ex:
-            return 0, str(ex)
+        return http_json(
+            method,
+            f"{gitea_base}{path}",
+            body=body,
+            basic=(gitea_admin_user, gitea_admin_pass),
+        )
 
     # Secrets to set
     secrets = {
@@ -3817,13 +5685,13 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     kubeconfig_data = None
     try:
         import subprocess
-        result = subprocess.run(
+        kube_result = subprocess.run(
             ["kind", "get", "kubeconfig", "--name", "sdd-cluster"],
             capture_output=True, text=True, timeout=15,
         )
-        if result.returncode == 0 and result.stdout.strip():
+        if kube_result.returncode == 0 and kube_result.stdout.strip():
             import yaml
-            data = yaml.safe_load(result.stdout)
+            data = yaml.safe_load(kube_result.stdout)
             for cluster in data.get("clusters", []):
                 cluster["cluster"].pop("certificate-authority-data", None)
                 cluster["cluster"]["insecure-skip-tls-verify"] = True
@@ -3906,7 +5774,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
         result["valid"] = True
         return result
 
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {})
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
     token = gitea.get("apiToken", "")
@@ -3964,6 +5832,49 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
             result["valid"] = False
             return result
+
+    # ── 1b. Clear branch protection so the initial force push is allowed ──
+    # The remote repo is auto-initialized with an unrelated commit, so the
+    # v0 baseline push needs --force — which a protected branch rejects.
+    # Protection is re-applied right after this step by
+    # set_gitea_branch_protection(), so clearing here is safe and idempotent.
+    try:
+        _conn = http.client.HTTPConnection(
+            urlparse(base_url).hostname or "localhost",
+            urlparse(base_url).port or 3000,
+            timeout=10,
+        )
+        _unexpected: list[str] = []
+        for _branch in ("dev", "main"):
+            _conn.request(
+                "DELETE",
+                f"/api/v1/repos/{owner}/{repo}/branch_protections/{_branch}",
+                headers={"Authorization": f"token {token}"},
+            )
+            _resp = _conn.getresponse()
+            _resp.read()
+            if _resp.status not in {204, 404}:
+                _unexpected.append(f"{_branch}: HTTP {_resp.status}")
+        _conn.close()
+        if _unexpected:
+            add_bucket_item(
+                result["findings"],
+                "gitea/branch_protections",
+                "protection.clear",
+                "Unexpected DELETE responses while clearing branch protection: "
+                + ", ".join(_unexpected),
+                "warning",
+                "apply",
+            )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "gitea/branch_protections",
+            "protection.clear",
+            f"Could not clear branch protection before push: {ex}",
+            "warning",
+            "apply",
+        )
 
     # ── 2. Ensure main branch exists in Gitea via API ─────────────────
     parsed = urlparse(base_url)
@@ -4045,8 +5956,11 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     if has_changes:
         run_native(["git", "add", "-A"], root, timeout=30)
+        # --no-verify: lefthook pre-commit hooks (gitleaks-staged, trunk-fmt)
+        # must not block the template's own initial v0 commit — the template
+        # intentionally ships test fixtures with sample secrets.
         commit = run_native(
-            ["git", "commit", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
+            ["git", "commit", "--no-verify", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
         )
         if commit["returncode"] == 0:
             result["actions"].append(
@@ -4078,8 +5992,24 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
+    # ── 3b. Push auth via API token ───────────────────────────────────
+    # Use the API token through an http.extraHeader so pushes never depend
+    # on the machine's credential manager (an interactive GCM prompt would
+    # hang in non-interactive runs and break one-shot setup on fresh hosts).
+    _push_auth: list[str] = []
+    if token and "replace-with" not in token:
+        try:
+            import base64 as _b64
+
+            _basic = _b64.b64encode(f"admin:{token}".encode()).decode()
+            _push_auth = ["-c", f"http.extraHeader=Authorization: Basic {_basic}"]
+        except Exception:
+            _push_auth = []
+
     # ── 4. Push dev branch to Gitea ───────────────────────────────────
-    push_dev = run_native(["git", "push", "-u", "gitea", "dev"], root, timeout=120)
+    # --force: the Gitea repo is auto-initialized (unrelated empty commit),
+    # so the first push must overwrite it to establish the v0 baseline.
+    push_dev = run_native(["git", *_push_auth, "push", "-u", "gitea", "dev", "--force"], root, timeout=300)
     if push_dev["returncode"] == 0:
         result["actions"].append(
             {
@@ -4101,7 +6031,10 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
 
     # ── 5. Push main branch to Gitea ──────────────────────────────────
-    push_main = run_native(["git", "push", "-u", "gitea", "main"], root, timeout=120)
+    # Ensure a local main ref exists (the repo is initialized with -b dev);
+    # `git branch main` fails harmlessly if it already exists on re-runs.
+    run_native(["git", "branch", "main"], root, timeout=10)
+    push_main = run_native(["git", *_push_auth, "push", "-u", "gitea", "main", "--force"], root, timeout=300)
     if push_main["returncode"] == 0:
         result["actions"].append(
             {
@@ -4193,1597 +6126,58 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
-# ── K8s scaffolding ───────────────────────────────────────────────────────
+# ── Kubernetes lab (moved to k8s_lab.py) ──────────────────────────────────
 
 
-def scaffold_k8s(root, dry_run=False):
-    """Scaffold K8s deployment files: Dockerfile, Kustomize base, and environment overlays.
+from .k8s_lab import (  # noqa: E402,F401  re-exported for backward compatibility
+    enable_docker_desktop_k8s,
+    ensure_headlamp,
+    scaffold_k8s,
+    setup_k8s_access,
+    setup_kind_cluster,
+    validate_docker_desktop_k8s,
+)
+from .k8s_validate import validate_overlays as validate_k8s_overlays  # noqa: E402
 
-    Reads infra/deployment/apps.json and generates for each app:
-    - Dockerfile (nginx for web, generic for api)
-    - nginx.conf (for web apps, with /health endpoint)
-    - infra/k8s/base/{app}-deployment.yaml
-    - infra/k8s/base/{app}-service.yaml
-    - infra/k8s/base/kustomization.yaml (references all apps)
-    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (image entries per app)
 
-    ⚠️ Health probe lesson: Always use /health as the default health check path
-    for all app roles. Web apps get /health via nginx.conf. API apps must
-    implement a GET /health endpoint in their code. This prevents rollout
-    failures where probes point to non-existent endpoints.
+
+# ── Assign app ports (block-of-10 ranges) ────────────────────────────────
+
+
+def assign_app_ports_step(root: Path, options: dict, dry_run: bool) -> dict:
+    """environment-lab assign-app-ports: allocate ports for a new app.
+
+    Requires --app <appId> --role <role> (roles and their ranges come from
+    infra/deployment/roles.json, ADR-0004; shipped: web, api). Allocates
+    host/node ports from the block-of-10 ranges, updates ports.json, and
+    regenerates kind-config.yaml + service patches.
     """
-    result = configure_result("ScaffoldK8s", dry_run, write_enabled=not dry_run)
+    from .k8s_ports import assign_app_ports_to_file, load_roles
 
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "infra/k8s",
-                "key": "scaffold.plan",
-                "severity": "info",
-                "message": (
-                    "Would scaffold K8s deployment files:"
-                    "\n  - Dockerfile per app (nginx for web)"
-                    "\n  - .dockerignore per app"
-                    "\n  - nginx.conf for web apps (with /health)"
-                    "\n  - infra/k8s/base/{app}-deployment.yaml per app"
-                    "\n  - infra/k8s/base/{app}-service.yaml per app"
-                    "\n  - infra/k8s/base/kustomization.yaml (all apps)"
-                    "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
-                ),
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-
-    # Prerequisite: validate kubectl is available (kind or Docker Desktop K8s)
-    k8s_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
-    if k8s_check["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "kubectl",
-            "missing",
-            "kubectl not available — run setup-kind-cluster first or ensure K8s is running.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    apps_path = root / "infra" / "deployment" / "apps.json"
-
-    if not apps_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "missing",
-            "apps.json not found - cannot scaffold K8s.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    try:
-        apps_data = read_json(apps_path, optional=False)
-        apps = apps_data.get("apps", [])
-    except Exception as ex:
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "read_error",
-            f"Could not parse apps.json: {ex}",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    if not apps:
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "no_apps",
-            "apps.json has no apps defined.",
-            "warning",
-            "pre-start",
-        )
-        result["valid"] = True
-        return result
-
-    k8s_dir = root / "infra" / "k8s"
-    k8s_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── Port mapping by role ──
-    _port_map = {"web": 80, "api": 5000}
-    # Fixed nodePorts for kind extraPortMappings (defined in infra/k8s/kind-config.yaml)
-    # Host → nodePort: 8081→30080 (web), 5002→30500 (api)
-    _node_port_base = {"web": 30080, "api": 30500}
-    _used_node_ports: set[int] = set()
-
-    def _port_for_role(role: str) -> int:
-        return _port_map.get(role, 80)
-
-    def _node_port_for_role(role: str) -> int:
-        base = _node_port_base.get(role, 30080)
-        port = base
-        while port in _used_node_ports:
-            port += 1
-        _used_node_ports.add(port)
-        return port
-    # ── Generate Dockerfile, nginx.conf, .dockerignore for each app ──
-    for app in apps:
-        app_id = app["appId"]
-        proj = app.get("projectPath", app_id)
-        role = app.get("role", "web")
-        app_dir = root / proj
-
-        if role == "web":
-            # .dockerignore
-            di = app_dir / ".dockerignore"
-            if not di.exists():
-                di.write_text("node_modules/\n.git/\n.env\n*.md\n", encoding="utf-8")
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/.dockerignore",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created .dockerignore for {app_id}.",
-                        "phase": "apply",
-                    }
-                )
-
-            # nginx.conf — /health endpoint required for K8s health probes
-            nc = app_dir / "nginx.conf"
-            if not nc.exists():
-                nc.write_text(
-                    "server {\n"
-                    "    listen 80;\n"
-                    "    server_name _;\n"
-                    "    root /usr/share/nginx/html;\n"
-                    "    index index.html;\n"
-                    "    location / {\n"
-                    "        try_files $uri $uri/ /index.html;\n"
-                    "    }\n"
-                    "    location /health {\n"
-                    '        return 200 \'{"status":"ok"}\';\n'
-                    "        add_header Content-Type application/json;\n"
-                    "    }\n"
-                    "}\n",
-                    encoding="utf-8",
-                )
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/nginx.conf",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created nginx.conf for {app_id} with /health endpoint.",
-                        "phase": "apply",
-                    }
-                )
-
-            # Dockerfile (multi-stage node build -> nginx serve)
-            df = app_dir / "Dockerfile"
-            if not df.exists():
-                dlines = [
-                    "# Stage 1: Build\n",
-                    "FROM node:20-alpine AS builder\n",
-                    "WORKDIR /app\n",
-                    "COPY package*.json ./\n",
-                    "RUN npm ci\n",
-                    "COPY . .\n",
-                    "RUN npm run build\n",
-                    "\n",
-                    "# Stage 2: Serve with nginx\n",
-                    "FROM nginx:alpine\n",
-                    "COPY --from=builder /app/dist /usr/share/nginx/html\n",
-                    "COPY nginx.conf /etc/nginx/conf.d/default.conf\n",
-                    "EXPOSE 80\n",
-                    "HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-",
-                    "  CMD wget -qO- http://localhost/health || exit 1\n",
-                    'CMD ["nginx", "-g", "daemon off;"]\n',
-                ]
-                df.write_text("".join(dlines), encoding="utf-8")
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/Dockerfile",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created Dockerfile for {app_id}.",
-                        "phase": "apply",
-                    }
-                )
-            else:
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/Dockerfile",
-                        "key": "file.exists",
-                        "severity": "info",
-                        "message": f"Dockerfile already exists for {app_id}.",
-                        "phase": "audit",
-                    }
-                )
-
-    # ── Generate Kustomize base manifests (one Deployment + Service per app) ──
-    base_dir = k8s_dir / "base"
-    base_dir.mkdir(parents=True, exist_ok=True)
-    base_resources = []
-
-    for app in apps:
-        app_id = app["appId"]
-        role = app.get("role", "web")
-        port = _port_for_role(role)
-        health_path = "/health"  # Always use /health — nginx.conf has it for web, api apps must implement it
-
-        # Deployment YAML
-        dep_file = f"{app_id}-deployment.yaml"
-        dep_path = base_dir / dep_file
-        if not dep_path.exists():
-            dep_yaml = (
-                "apiVersion: apps/v1\n"
-                "kind: Deployment\n"
-                "metadata:\n"
-                f"  name: {app_id}\n"
-                "spec:\n"
-                "  replicas: 1\n"
-                "  selector:\n"
-                "    matchLabels:\n"
-                f"      app: {app_id}\n"
-                "  template:\n"
-                "    metadata:\n"
-                "      labels:\n"
-                f"        app: {app_id}\n"
-                "    spec:\n"
-                "      containers:\n"
-                f"        - name: {app_id}\n"
-                f"          image: host.docker.internal:5001/{app_id}\n"
-                "          imagePullPolicy: IfNotPresent\n"
-                "          ports:\n"
-                f"            - containerPort: {port}\n"
-            )
-            # Add ASPNETCORE_URLS for .NET backends
-            if role == "api":
-                dep_yaml += (
-                    "          env:\n"
-                    '            - name: ASPNETCORE_ENVIRONMENT\n'
-                    '              value: "Production"\n'
-                    '            - name: ASPNETCORE_URLS\n'
-                    f'              value: "http://+:{port}"\n'
-                )
-            dep_yaml += (
-                "          livenessProbe:\n"
-                "            httpGet:\n"
-                f"              path: {health_path}\n"
-                f"              port: {port}\n"
-                "            initialDelaySeconds: 10\n"
-                "            periodSeconds: 30\n"
-                "          readinessProbe:\n"
-                "            httpGet:\n"
-                f"              path: {health_path}\n"
-                f"              port: {port}\n"
-                "            initialDelaySeconds: 5\n"
-                "            periodSeconds: 10\n"
-                "          resources:\n"
-                "            requests:\n"
-                '              cpu: "100m"\n'
-                '              memory: "128Mi"\n'
-                "            limits:\n"
-                '              cpu: "500m"\n'
-                '              memory: "256Mi"\n'
-            )
-            dep_path.write_text(dep_yaml, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/base/{dep_file}",
-                    "key": "file.created",
-                    "severity": "info",
-                    "message": f"Created K8s Deployment for {app_id} (role={role}, port={port}).",
-                    "phase": "apply",
-                }
-            )
-        else:
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/base/{dep_file}",
-                    "key": "file.exists",
-                    "severity": "info",
-                    "message": f"Deployment YAML already exists for {app_id}.",
-                    "phase": "audit",
-                }
-            )
-
-        # Service YAML
-        svc_file = f"{app_id}-service.yaml"
-        svc_path = base_dir / svc_file
-        if not svc_path.exists():
-            node_port = _node_port_for_role(role)
-            svc_yaml = (
-                "apiVersion: v1\n"
-                "kind: Service\n"
-                "metadata:\n"
-                f"  name: {app_id}\n"
-                "spec:\n"
-                "  type: NodePort\n"
-                "  selector:\n"
-                f"    app: {app_id}\n"
-                "  ports:\n"
-                "    - protocol: TCP\n"
-                f"      port: {port}\n"
-                f"      targetPort: {port}\n"
-                f"      nodePort: {node_port}\n"
-            )
-            svc_path.write_text(svc_yaml, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/base/{svc_file}",
-                    "key": "file.created",
-                    "severity": "info",
-                    "message": f"Created K8s Service for {app_id} (LoadBalancer, port {port}).",
-                    "phase": "apply",
-                }
-            )
-        else:
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/base/{svc_file}",
-                    "key": "file.exists",
-                    "severity": "info",
-                    "message": f"Service YAML already exists for {app_id}.",
-                    "phase": "audit",
-                }
-            )
-
-        base_resources.append(f"  - {dep_file}")
-        base_resources.append(f"  - {svc_file}")
-
-    # Base kustomization.yaml
-    base_kustomization = base_dir / "kustomization.yaml"
-    if not base_kustomization.exists():
-        kustomize_yaml = (
-            "apiVersion: kustomize.config.k8s.io/v1beta1\n"
-            "kind: Kustomization\n"
-            "resources:\n"
-            + "\n".join(base_resources)
-            + "\n"
-            "commonLabels:\n"
-            "  app.kubernetes.io/managed-by: sdd-cli\n"
-        )
-        base_kustomization.write_text(kustomize_yaml, encoding="utf-8")
-        app_names = ", ".join(a["appId"] for a in apps)
-        result["actions"].append(
-            {
-                "path": "infra/k8s/base/kustomization.yaml",
-                "key": "file.created",
-                "severity": "info",
-                "message": f"Created base kustomization.yaml with {len(apps)} app(s): {app_names}.",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": "infra/k8s/base/kustomization.yaml",
-                "key": "file.exists",
-                "severity": "info",
-                "message": "Base kustomization.yaml already exists — add new apps manually if needed.",
-                "phase": "audit",
-            }
-        )
-
-    # ── Generate environment overlays (dev, qa, prod) ──
-    registry = "host.docker.internal:5001"
-    for env_name in ("dev", "qa", "prod"):
-        overlay_dir = k8s_dir / "overlays" / env_name
-        overlay_dir.mkdir(parents=True, exist_ok=True)
-
-        overlay_file = overlay_dir / "kustomization.yaml"
-        if not overlay_file.exists():
-            image_entries = []
-            for app in apps:
-                app_id = app["appId"]
-                image_entries.append(
-                    f"  - name: {registry}/{app_id}\n"
-                    "    newTag: latest\n"
-                )
-
-            overlay_yaml = (
-                "apiVersion: kustomize.config.k8s.io/v1beta1\n"
-                "kind: Kustomization\n"
-                f"namespace: sdd-{env_name}\n"
-                "resources:\n"
-                "  - ../../base\n"
-                "images:\n"
-                + "".join(image_entries)
-            )
-            overlay_file.write_text(overlay_yaml, encoding="utf-8")
-            count = len(apps)
-            label = "entry" if count == 1 else "entries"
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
-                    "key": "file.created",
-                    "severity": "info",
-                    "message": f"Created {env_name} overlay kustomization.yaml with {count} app image {label}.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            result["actions"].append(
-                {
-                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
-                    "key": "file.exists",
-                    "severity": "info",
-                    "message": f"{env_name} overlay already exists.",
-                    "phase": "audit",
-                }
-            )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result  # ── kind cluster setup ────────────────────────────────────────────────
-
-
-def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Create a kind cluster with extraPortMappings for direct host access.
-
-    Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
-      host:8081 → nodePort:30080 → frontend:80
-      host:5002 → nodePort:30500 → backend:5000
-      host:8083 → nodePort:30780 → openproject:80
-
-    This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
-    Docker Engine restart, and requires no Docker Desktop Kubernetes toggle.
-
-    Steps:
-    1. Install kind if not present (Windows/macOS/Linux)
-    2. Create kind cluster 'sdd-cluster' with infra/k8s/kind-config.yaml
-    3. Save kubeconfig for CI access (replace 127.0.0.1 with host.docker.internal)
-    4. Connect to Docker networks for CI access
-    """
-    result = configure_result(
-        "SetupKindCluster", dry_run, write_enabled=not dry_run
-    )
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "kind",
-                "key": "cluster.create",
-                "severity": "info",
-                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5002→backend).",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-
-    # ── 1. Check if kubectl is already connected to a cluster ──
-    kubectl_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
-    if kubectl_check["returncode"] == 0:
+    app_id = options.get("app") or options.get("app-id")
+    role = options.get("role")
+    if not app_id or not role:
         try:
-            k8s_info = json.loads(kubectl_check["stdout"])
-            server = k8s_info.get("serverVersion", {})
-            git_version = server.get("gitVersion", "unknown")
-
-            # Check if it's a kind cluster
-            current_ctx = run_native(
-                ["kubectl", "config", "current-context"], root, timeout=5
-            )
-            ctx_name = current_ctx["stdout"].strip() if current_ctx["returncode"] == 0 else "unknown"
-
-            result["actions"].append(
+            known = ", ".join(sorted(load_roles(root)))
+        except ValueError:
+            known = "web, api"
+        return {
+            "mode": "AssignAppPorts",
+            "dryRun": dry_run,
+            "valid": False,
+            "actions": [],
+            "findings": [
                 {
-                    "path": "kubectl",
-                    "key": "cluster.ready",
-                    "severity": "info",
-                    "message": f"K8s cluster is already reachable (context={ctx_name}, v{git_version}).",
-                    "phase": "audit",
+                    "key": "ports.args",
+                    "severity": "error",
+                    "message": (
+                        "assign-app-ports requires --app <appId> --role <role> "
+                        f"(roles with ranges: {known})."
+                    ),
                 }
-            )
-            cluster_exists = True
-        except (json.JSONDecodeError, KeyError):
-            cluster_exists = False
-    else:
-        cluster_exists = False
-
-    if not cluster_exists:
-        # ── 2. Ensure kind is installed ──
-        kind_check = run_native(["kind", "version"], root, timeout=10)
-        if kind_check["returncode"] != 0:
-            import platform
-
-            pf = platform.system().lower()
-            result["actions"].append(
-                {
-                    "path": "kind",
-                    "key": "binary.install",
-                    "severity": "info",
-                    "message": "kind not found — installing v0.32.0...",
-                    "phase": "apply",
-                }
-            )
-            if pf == "windows":
-                install_cmd = [
-                    "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
-                ]
-                install = run_native(install_cmd, root, timeout=120)
-                if install["returncode"] != 0:
-                    add_bucket_item(
-                        result["findings"],
-                        "kind",
-                        "install.failed",
-                        "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
-                        "error",
-                        "pre-start",
-                    )
-                    result["valid"] = False
-                    return result
-            elif pf == "darwin":
-                run_native(["brew", "install", "kind"], root, timeout=120)
-            else:
-                # Linux — direct download
-                kind_url = (
-                    "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
-                )
-                run_native(
-                    [
-                        "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
-                        "&&", "chmod", "+x", "/usr/local/bin/kind",
-                    ],
-                    root,
-                    timeout=60,
-                )
-
-        # Verify kind is now available
-        kind_check2 = run_native(["kind", "version"], root, timeout=10)
-        if kind_check2["returncode"] != 0:
-            add_bucket_item(
-                result["findings"],
-                "kind",
-                "not.found",
-                "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
-                "error",
-                "pre-start",
-            )
-            result["valid"] = False
-            return result
-        else:
-            result["actions"].append(
-                {
-                    "path": "kind",
-                    "key": "binary.installed",
-                    "severity": "info",
-                    "message": f"kind is available: {kind_check2['stdout'].strip()}.",
-                    "phase": "audit",
-                }
-            )
-
-        # ── 3. Check if sdd-cluster already exists ──
-        clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
-        if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
-            result["actions"].append(
-                {
-                    "path": "kind/sdd-cluster",
-                    "key": "cluster.exists",
-                    "severity": "info",
-                    "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
-                    "phase": "audit",
-                }
-            )
-        else:
-            # ── 4. Create kind cluster with extraPortMappings ──
-            kind_config = root / "infra" / "k8s" / "kind-config.yaml"
-            if not kind_config.exists():
-                add_bucket_item(
-                    result["findings"],
-                    "infra/k8s/kind-config.yaml",
-                    "missing",
-                    "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
-                    "error",
-                    "pre-start",
-                )
-                result["valid"] = False
-                return result
-
-            result["actions"].append(
-                {
-                    "path": "kind/sdd-cluster",
-                    "key": "cluster.create",
-                    "severity": "info",
-                    "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
-                    "phase": "apply",
-                }
-            )
-            create = run_native(
-                ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
-                root,
-                timeout=300,
-            )
-            if create["returncode"] != 0:
-                add_bucket_item(
-                    result["findings"],
-                    "kind/sdd-cluster",
-                    "create.failed",
-                    f"kind create cluster failed: {create['stderr']}",
-                    "error",
-                    "apply",
-                )
-                result["valid"] = False
-                return result
-
-            result["actions"].append(
-                {
-                    "path": "kind/sdd-cluster",
-                    "key": "cluster.created",
-                    "severity": "info",
-                    "message": "kind cluster 'sdd-cluster' created successfully.",
-                    "phase": "apply",
-                }
-            )
-
-        # ── 5. Save kubeconfig for CI access ──
-        # Get kubeconfig
-        kc_get = run_native(
-            ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
-        )
-        if kc_get["returncode"] == 0 and kc_get["stdout"]:
-            kc_data = kc_get["stdout"]
-
-            # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
-            # Use YAML-safe approach: replace server address and strip CA data
-            kc_lines = kc_data.splitlines()
-            kc_ci_lines = []
-            skip_ca = False
-            for line in kc_lines:
-                stripped = line.strip()
-                if "127.0.0.1" in line and "server:" in line:
-                    kc_ci_lines.append("    server: https://host.docker.internal:6443")
-                elif "certificate-authority-data:" in stripped:
-                    kc_ci_lines.append("    insecure-skip-tls-verify: true")
-                    skip_ca = True
-                elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
-                    skip_ca = False
-                    kc_ci_lines.append(line)
-                elif skip_ca and stripped and not stripped.startswith("#"):
-                    # Skip CA data lines (PEM content)
-                    continue
-                else:
-                    kc_ci_lines.append(line)
-            kc_ci = "\n".join(kc_ci_lines)
-
-            # Write CI kubeconfig
-            kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
-            if not dry_run:
-                kc_path.write_text(kc_ci, encoding="utf-8")
-                result["actions"].append(
-                    {
-                        "path": "infra/k8s/kind-kubeconfig-ci.yaml",
-                        "key": "kubeconfig.written",
-                        "severity": "info",
-                        "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
-                        "phase": "apply",
-                    }
-                )
-
-            # Merge into default kubeconfig for local access
-            merge = run_native(
-                ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
-                root,
-                timeout=15,
-            )
-            if merge["returncode"] == 0:
-                result["actions"].append(
-                    {
-                        "path": "~/.kube/config",
-                        "key": "kubeconfig.merged",
-                        "severity": "info",
-                        "message": "Merged kind kubeconfig into ~/.kube/config.",
-                        "phase": "apply",
-                    }
-                )
-
-    # ── 6. Connect to Docker networks for CI access and Grafana monitoring ──
-    # Grafana's Infinity datasource queries kind nodePorts directly using
-    # Docker DNS (sdd-cluster-control-plane:<nodePort>). Without this network
-    # connection, Grafana can't reach kind's kube-proxy iptables rules.
-    #
-    # The CI runner containers also need access to Gitea and Nexus via
-    # host.docker.internal or Docker DNS.
-    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus", "agentic-e2e_monitoring"):
-        connect = run_native(
-            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
-            root,
-            timeout=15,
-        )
-        if connect["returncode"] == 0:
-            result["actions"].append(
-                {
-                    "path": f"docker/{network}",
-                    "key": "network.connected",
-                    "severity": "info",
-                    "message": f"Connected sdd-cluster-control-plane to {network}.",
-                    "phase": "apply",
-                }
-            )
-        # Non-fatal if network doesn't exist yet
-
-    # ── 7. Connect Grafana to the kind network (so dashboard DNS names resolve) ──
-    # The Grafana Health Check Board uses sdd-cluster-control-plane:<nodePort> URLs.
-    # These resolve via Docker DNS when Grafana is on the same network as the kind node.
-    # The compose.yml only attaches to 'monitoring' network, so we add 'kind' network
-    # at runtime. This is idempotent — 'already connected' is a non-error.
-    grafana_connect = run_native(
-        ["docker", "network", "connect", "kind", "agentic-grafana"],
-        root,
-        timeout=15,
-    )
-    if grafana_connect["returncode"] == 0:
-        result["actions"].append(
-            {
-                "path": "docker/kind",
-                "key": "grafana.network_connected",
-                "severity": "info",
-                "message": "Connected agentic-grafana to kind network for health check queries.",
-                "phase": "apply",
-            }
-        )
-    else:
-        output_lower = (grafana_connect.get("stdout", "") + grafana_connect.get("stderr", "")).lower()
-        if "already" in output_lower:
-            result["actions"].append(
-                {
-                    "path": "docker/kind",
-                    "key": "grafana.network_already_connected",
-                    "severity": "info",
-                    "message": "Grafana is already connected to kind network.",
-                    "phase": "audit",
-                }
-            )
-        else:
-            add_bucket_item(
-                result["findings"],
-                "docker/kind",
-                "grafana.network_connect_failed",
-                f"Could not connect Grafana to kind network: {grafana_connect.get('stderr', '')[:200]}",
-                "warning",
-                "apply",
-            )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
-    if kind_check["returncode"] != 0:
-        import platform
-
-        pf = platform.system().lower()
-        result["actions"].append(
-            {
-                "path": "kind",
-                "key": "binary.install",
-                "severity": "info",
-                "message": "kind not found — installing v0.32.0...",
-                "phase": "apply",
-            }
-        )
-        if pf == "windows":
-            install_cmd = [
-                "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
-            ]
-            install = run_native(install_cmd, root, timeout=120)
-            if install["returncode"] != 0:
-                add_bucket_item(
-                    result["findings"],
-                    "kind",
-                    "install.failed",
-                    "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
-                    "error",
-                    "pre-start",
-                )
-                result["valid"] = False
-                return result
-        elif pf == "darwin":
-            run_native(["brew", "install", "kind"], root, timeout=120)
-        else:
-            # Linux — direct download
-            kind_url = (
-                "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
-            )
-            run_native(
-                [
-                    "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
-                    "&&", "chmod", "+x", "/usr/local/bin/kind",
-                ],
-                root,
-                timeout=60,
-            )
-
-    # Verify kind is now available
-    kind_check2 = run_native(["kind", "version"], root, timeout=10)
-    if kind_check2["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "kind",
-            "not.found",
-            "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    else:
-        result["actions"].append(
-            {
-                "path": "kind",
-                "key": "binary.installed",
-                "severity": "info",
-                "message": f"kind is available: {kind_check2['stdout'].strip()}.",
-                "phase": "audit",
-            }
-        )
-
-    # ── 3. Check if sdd-cluster already exists ──
-    clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
-    if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
-        result["actions"].append(
-            {
-                "path": "kind/sdd-cluster",
-                "key": "cluster.exists",
-                "severity": "info",
-                "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
-                "phase": "audit",
-            }
-        )
-    else:
-        # ── 4. Create kind cluster with extraPortMappings ──
-        kind_config = root / "infra" / "k8s" / "kind-config.yaml"
-        if not kind_config.exists():
-            add_bucket_item(
-                result["findings"],
-                "infra/k8s/kind-config.yaml",
-                "missing",
-                "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
-                "error",
-                "pre-start",
-            )
-            result["valid"] = False
-            return result
-
-        result["actions"].append(
-            {
-                "path": "kind/sdd-cluster",
-                "key": "cluster.create",
-                "severity": "info",
-                "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
-                "phase": "apply",
-            }
-        )
-        create = run_native(
-            ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
-            root,
-            timeout=300,
-        )
-        if create["returncode"] != 0:
-            add_bucket_item(
-                result["findings"],
-                "kind/sdd-cluster",
-                "create.failed",
-                f"kind create cluster failed: {create['stderr']}",
-                "error",
-                "apply",
-            )
-            result["valid"] = False
-            return result
-
-        result["actions"].append(
-            {
-                "path": "kind/sdd-cluster",
-                "key": "cluster.created",
-                "severity": "info",
-                "message": "kind cluster 'sdd-cluster' created successfully.",
-                "phase": "apply",
-            }
-        )
-
-    # ── 5. Save kubeconfig for CI access ──
-    # Get kubeconfig
-    kc_get = run_native(
-        ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
-    )
-    if kc_get["returncode"] == 0 and kc_get["stdout"]:
-        kc_data = kc_get["stdout"]
-
-        # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
-        # Use YAML-safe approach: replace server address and strip CA data
-        kc_lines = kc_data.splitlines()
-        kc_ci_lines = []
-        skip_ca = False
-        for line in kc_lines:
-            stripped = line.strip()
-            if "127.0.0.1" in line and "server:" in line:
-                kc_ci_lines.append("    server: https://host.docker.internal:6443")
-            elif "certificate-authority-data:" in stripped:
-                kc_ci_lines.append("    insecure-skip-tls-verify: true")
-                skip_ca = True
-            elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
-                skip_ca = False
-                kc_ci_lines.append(line)
-            elif skip_ca and stripped and not stripped.startswith("#"):
-                # Skip CA data lines (PEM content)
-                continue
-            else:
-                kc_ci_lines.append(line)
-        kc_ci = "\n".join(kc_ci_lines)
-
-        # Write CI kubeconfig
-        kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
-        if not dry_run:
-            kc_path.write_text(kc_ci, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": "infra/k8s/kind-kubeconfig-ci.yaml",
-                    "key": "kubeconfig.written",
-                    "severity": "info",
-                    "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
-                    "phase": "apply",
-                }
-            )
-
-        # Merge into default kubeconfig for local access
-        merge = run_native(
-            ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
-            root,
-            timeout=15,
-        )
-        if merge["returncode"] == 0:
-            result["actions"].append(
-                {
-                    "path": "~/.kube/config",
-                    "key": "kubeconfig.merged",
-                    "severity": "info",
-                    "message": "Merged kind kubeconfig into ~/.kube/config.",
-                    "phase": "apply",
-                }
-            )
-
-    # ── 6. Connect to Docker networks for CI access ──
-    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus"):
-        connect = run_native(
-            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
-            root,
-            timeout=15,
-        )
-        if connect["returncode"] == 0:
-            result["actions"].append(
-                {
-                    "path": f"docker/{network}",
-                    "key": "network.connected",
-                    "severity": "info",
-                    "message": f"Connected sdd-cluster-control-plane to {network}.",
-                    "phase": "apply",
-                }
-            )
-        # Non-fatal if network doesn't exist yet
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
-
-
-# ── Docker Desktop K8s enablement (legacy fallback) ─────────────────────
-
-
-def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Enable Kubernetes in Docker Desktop if not already running.
-
-    Checks if K8s is already accessible via kubectl. If not, looks at the
-    Docker Desktop settings.json to see if K8s is disabled in config, and
-    if so, enables it programmatically. If Docker Desktop needs a restart
-    to pick up the change, warns the user.
-
-    This runs BEFORE compose_up() so that any Docker restart happens before
-    our containers start, not after.
-    """
-    result = configure_result(
-        "EnableDockerDesktopK8s", dry_run, write_enabled=not dry_run
-    )
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "docker-desktop",
-                "key": "k8s.enable",
-                "severity": "info",
-                "message": "Would check K8s status and enable if needed.",
-                "phase": "audit",
-            }
-        )
-        result["valid"] = True
-        return result
-
-    # ── 1. Check if K8s is already accessible ──
-    kubectl = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
-    if kubectl["returncode"] == 0:
-        try:
-            k8s_info = json.loads(kubectl["stdout"])
-            server = k8s_info.get("serverVersion", {})
-            git_version = server.get("gitVersion", "unknown")
-            result["actions"].append(
-                {
-                    "path": "docker-desktop",
-                    "key": "k8s.enable",
-                    "severity": "info",
-                    "message": f"Kubernetes is already running (v{git_version}).",
-                    "phase": "audit",
-                }
-            )
-            result["valid"] = True
-            return result
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    # ── 2. Not running — check Docker Desktop settings ──
-    # On Windows, settings are in one of several possible locations:
-    #   %APPDATA%\Docker\settings-store.json  (Docker Desktop 4.37+)
-    #   %APPDATA%\Docker\settings.json        (Docker Desktop 4.34 and earlier)
-    # The key can be either:
-    #   "kubernetes": {"enabled": true}       (nested, newer format)
-    #   "kubernetesEnabled": true             (flat, older format)
-    settings_path = None
-    import platform
-
-    if sys.platform == "win32" or platform.system() == "Windows":
-        base_dirs = [
-            Path(os.environ.get("APPDATA", "")),
-            Path.home() / "AppData" / "Roaming",
-            Path(os.environ.get("LOCALAPPDATA", "")),
-            Path(os.environ.get("PROGRAMDATA", "")),
-        ]
-        # Try settings-store.json first (newer), then settings.json (older)
-        for settings_name in ("settings-store.json", "settings.json"):
-            for base in base_dirs:
-                candidate = base / "Docker" / settings_name
-                if candidate.exists():
-                    settings_path = candidate
-                    break
-            if settings_path:
-                break
-
-    if settings_path is None or not settings_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "docker-desktop",
-            "k8s.enable",
-            "Docker Desktop settings file not found — cannot auto-enable K8s. "
-            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
-            "then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False  # K8s is required
-        return result
-
-    # ── 3. Read settings file to check K8s state ──
-    try:
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as ex:
-        add_bucket_item(
-            result["findings"],
-            str(settings_path),
-            "k8s.enable",
-            f"Could not parse Docker Desktop settings: {ex}. "
-            "Enable Kubernetes manually in Docker Desktop Settings.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # Read K8s state: try nested "kubernetes.enabled" (newer) then flat "KubernetesEnabled" (older)
-    k8s_section = settings.get("kubernetes", {})
-    if isinstance(k8s_section, dict):
-        k8s_enabled = k8s_section.get("enabled", False)
-    else:
-        k8s_enabled = False
-    if not k8s_enabled:
-        k8s_enabled = settings.get("KubernetesEnabled", False)
-
-    if k8s_enabled:
-        # K8s is enabled in settings but kubectl is not responding — Docker Desktop
-        # may need a restart to recover the cluster. Fall through to the restart
-        # logic instead of erroring out.
-        result["actions"].append(
-            {
-                "path": "docker-desktop",
-                "key": "k8s.restart",
-                "severity": "info",
-                "message": "K8s is enabled in settings but not responding. Restarting Docker Desktop to recover cluster...",
-                "phase": "apply",
-            }
-        )
-
-    # ── 4. Enable K8s in settings file ──
-    # Write both formats for backward compatibility
-    settings["KubernetesEnabled"] = True
-    if "kubernetes" not in settings or not isinstance(settings["kubernetes"], dict):
-        settings["kubernetes"] = {}
-    settings["kubernetes"]["enabled"] = True
-    try:
-        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-        result["actions"].append(
-            {
-                "path": str(settings_path),
-                "key": "k8s.enable",
-                "severity": "info",
-                "message": "Set kubernetes.enabled=true in Docker Desktop settings.",
-                "phase": "apply",
-            }
-        )
-    except OSError as ex:
-        add_bucket_item(
-            result["findings"],
-            str(settings_path),
-            "k8s.enable",
-            f"Could not write Docker Desktop settings: {ex}. "
-            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
-            "then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # ── 5. Restart Docker Desktop to pick up K8s enablement ──
-    # Use `docker desktop stop` / `docker desktop start` CLI (Docker Desktop 4.37+)
-    # Falls back to killing the process if CLI is not available
-    result["actions"].append(
-        {
-            "path": "docker",
-            "key": "k8s.restart",
-            "severity": "info",
-            "message": "Stopping Docker Desktop to enable K8s...",
-            "phase": "apply",
+            ],
         }
-    )
-    # Try docker desktop CLI first (Docker Desktop 4.37+), fallback to taskkill
-    stop_cmd = run_native(["docker", "desktop", "stop"], root, timeout=30)
-    if stop_cmd["returncode"] != 0:
-        # Fallback: taskkill
-        taskkill = run_native(
-            ["taskkill", "/F", "/IM", "Docker Desktop.exe"], root, timeout=15
-        )
-        if taskkill["returncode"] != 0:
-            add_bucket_item(
-                result["findings"],
-                "docker-desktop",
-                "k8s.restart",
-                "Could not stop Docker Desktop. Close it manually (right-click tray icon → Quit), "
-                "then re-run setup-lab.",
-                "error",
-                "pre-start",
-            )
-            result["valid"] = False
-            return result
-    # Wait for Docker process to fully exit
-    time.sleep(5)
-
-    # Start Docker Desktop via CLI
-    result["actions"].append(
-        {
-            "path": "docker",
-            "key": "k8s.restart",
-            "severity": "info",
-            "message": "Starting Docker Desktop (K8s enabled)...",
-            "phase": "apply",
-        }
-    )
-    start_cmd = run_native(["docker", "desktop", "start"], root, timeout=30)
-    if start_cmd["returncode"] != 0:
-        # Fallback: try launching Docker Desktop executable directly
-        dd_exe = shutil.which("docker")
-        if dd_exe:
-            dd_exe_path = Path(dd_exe).parent.parent / "Docker Desktop.exe"
-        else:
-            dd_exe_path = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
-        if dd_exe_path.exists():
-            subprocess.Popen(
-                [str(dd_exe_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
-            )
-        else:
-            add_bucket_item(
-                result["findings"],
-                "docker-desktop",
-                "k8s.restart",
-                "Could not start Docker Desktop. Start it manually from the Start Menu, "
-                "then re-run setup-lab.",
-                "error",
-                "pre-start",
-            )
-            result["valid"] = False
-            return result
-    time.sleep(5)
-
-    # ── 6. Wait for Docker daemon to be ready (up to 120s) ──
-    result["actions"].append(
-        {
-            "path": "docker",
-            "key": "k8s.restart",
-            "severity": "info",
-            "message": "Waiting for Docker daemon to start (up to 120s)...",
-            "phase": "apply",
-        }
-    )
-    daemon_ready = False
-    for _attempt in range(24):  # 24 * 5 = 120 seconds
-        time.sleep(5)
-        check = run_native(
-            ["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10
-        )
-        if check["returncode"] == 0 and check["stdout"].strip():
-            daemon_ready = True
-            break
-    if not daemon_ready:
-        add_bucket_item(
-            result["findings"],
-            "docker",
-            "k8s.restart",
-            "Docker daemon did not become ready within 120s after restart. "
-            "Check Docker Desktop manually, wait for it to finish starting, then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # ── 7. Wait for K8s to be ready (up to 180s) ──
-    result["actions"].append(
-        {
-            "path": "docker",
-            "key": "k8s.restart",
-            "severity": "info",
-            "message": f"Docker daemon ready (v{check['stdout'].strip()}). Waiting for K8s cluster (up to 180s)...",
-            "phase": "apply",
-        }
-    )
-
-    k8s_ready = False
-    git_version = "unknown"
-    for _attempt in range(18):  # 18 * 10 = 180 seconds
-        time.sleep(10)
-        k_check = run_native(["kubectl", "version", "--output=json"], root, timeout=10)
-        if k_check["returncode"] == 0:
-            try:
-                k8s_info = json.loads(k_check["stdout"])
-                server = k8s_info.get("serverVersion", {})
-                git_version = server.get("gitVersion", "unknown")
-                k8s_ready = True
-                break
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-    if not k8s_ready:
-        add_bucket_item(
-            result["findings"],
-            "docker-desktop",
-            "k8s.restart",
-            "Kubernetes did not become ready within 180s after Docker Desktop restart. "
-            "Wait for the K8s cluster to finish initializing in Docker Desktop, then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    result["actions"].append(
-        {
-            "path": "docker-desktop",
-            "key": "k8s.enable",
-            "severity": "info",
-            "message": f"Kubernetes is now running (v{git_version}).",
-            "phase": "apply",
-        }
-    )
-
-    # Also update the K8s context to docker-desktop
-    run_native(["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10)
-
-    result["valid"] = True
-    return result
-
-
-# ── Docker Desktop K8s validation ────────────────────────────────────────
-
-
-def validate_docker_desktop_k8s(root, dry_run=False):
-    """Check if Docker Desktop K8s is enabled and accessible."""
-    result = configure_result("ValidateDockerDesktopK8s", dry_run, write_enabled=False)
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "docker-desktop",
-                "key": "k8s.validate",
-                "severity": "info",
-                "message": "Would check if Docker Desktop K8s is enabled.",
-                "phase": "audit",
-            }
-        )
-        result["valid"] = True
-        return result
-
-    # Check kubectl
-    kubectl = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
-    if kubectl["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "kubectl",
-            "missing",
-            "kubectl not found or not working. Enable K8s in Docker Desktop Settings.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # Try to parse server version
-    try:
-        k8s_info = json.loads(kubectl["stdout"])
-        server = k8s_info.get("serverVersion", {})
-        git_version = server.get("gitVersion", "unknown")
-        result["actions"].append(
-            {
-                "path": "docker-desktop",
-                "key": "k8s.server",
-                "severity": "info",
-                "message": f"Docker Desktop K8s is running (v{git_version}).",
-                "phase": "audit",
-            }
-        )
-    except (json.JSONDecodeError, KeyError):
-        result["actions"].append(
-            {
-                "path": "docker-desktop",
-                "key": "k8s.server",
-                "severity": "info",
-                "message": "Docker Desktop K8s is running (version unknown).",
-                "phase": "audit",
-            }
-        )
-
-    # Check cluster info
-    cluster = run_native(
-        ["kubectl", "cluster-info", "--request-timeout=5s"], root, timeout=10
-    )
-    if cluster["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "k8s",
-            "cluster.unreachable",
-            "K8s cluster is not reachable via kubectl.",
-            "error",
-            "post-start",
-        )
-        result["valid"] = False
-        return result
-
-    # Check if this is Docker Desktop (check context name)
-    ctx = run_native(["kubectl", "config", "current-context"], root, timeout=5)
-    context_name = ctx["stdout"].strip() if ctx["returncode"] == 0 else "unknown"
-    if "docker" in context_name.lower() or "desktop" in context_name.lower():
-        result["actions"].append(
-            {
-                "path": "k8s",
-                "key": "context",
-                "severity": "info",
-                "message": f"K8s context is '{context_name}' (Docker Desktop).",
-                "phase": "audit",
-            }
-        )
-    else:
-        add_bucket_item(
-            result["findings"],
-            "k8s",
-            "context.warning",
-            f"K8s context is '{context_name}' - expected Docker Desktop context.",
-            "warning",
-            "audit",
-        )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
-
-
-# ── K8s access setup (port-forward) ─────────────────────────────────────
-
-
-def setup_k8s_access(root, dry_run=False):
-    """Discover deployed app URLs via kind extraPortMappings (no kubectl port-forward needed).
-
-    The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
-      host:8081 → kind-node:30080 → frontend:80
-      host:5002 → kind-node:30500 → backend:5000
-      host:8083 → kind-node:30780 → openproject:80
-
-    These mappings make services directly accessible at localhost without port-forward.
-    """
-    result = configure_result("SetupK8sAccess", dry_run, write_enabled=not dry_run)
-    apps_path = root / "infra" / "deployment" / "apps.json"
-
-    if not apps_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "missing",
-            "apps.json not found.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    try:
-        apps_data = read_json(apps_path, optional=False)
-        apps = apps_data.get("apps", [])
-    except Exception as ex:
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "read_error",
-            f"Could not parse: {ex}",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    if not apps:
-        add_bucket_item(
-            result["findings"],
-            "infra/deployment/apps.json",
-            "no_apps",
-            "No apps defined.",
-            "warning",
-            "pre-start",
-        )
-        result["valid"] = True
-        return result
-
-    # Map app roles to their kind extraPortMapping host ports (defined in kind-config.yaml)
-    # Role-based defaults: web→8081, api→5002
-    _HOST_PORT_MAP: dict[str, int] = {
-        "frontend": 8081,
-        "backend": 5002,
-    }
-
-    if dry_run:
-        for app in apps:
-            result["actions"].append(
-                {
-                    "path": f"k8s/url/{app['appId']}",
-                    "key": "url.discover",
-                    "severity": "info",
-                    "message": f"Would discover URL for {app['appId']} via extraPortMapping.",
-                    "phase": "apply",
-                }
-            )
-        result["valid"] = True
-        return result
-
-    # Validate K8s first
-    k8s_valid = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
-    if k8s_valid["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "kubectl",
-            "missing",
-            "kubectl not available — run setup-kind-cluster first.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    for app in apps:
-        app_id = app["appId"]
-        health_path = app.get("healthPath", "/health")
-        role = app.get("role", "web")
-
-        for env in ("dev", "qa", "prod"):
-            ns = f"sdd-{env}"
-
-            # Determine host port from app-specific map or role default
-            host_port = _HOST_PORT_MAP.get(app_id)
-            if host_port is None:
-                # Fallback: suggest port-forward if no extraPortMapping is configured
-                host_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
-
-            # Check if namespace exists
-            ns_check = run_native(
-                ["kubectl", "get", "ns", ns, "--request-timeout=3s"], root, timeout=10
-            )
-            if ns_check["returncode"] != 0:
-                result["actions"].append(
-                    {
-                        "path": f"k8s/{ns}",
-                        "key": "namespace.missing",
-                        "severity": "info",
-                        "message": f"Namespace {ns} does not exist yet - deploy first.",
-                        "phase": "audit",
-                    }
-                )
-                continue
-
-            # Check if service exists
-            svc_check = run_native(
-                [
-                    "kubectl",
-                    "-n",
-                    ns,
-                    "get",
-                    "svc",
-                    app_id,
-                    "-o",
-                    "jsonpath={.spec.ports[0].nodePort}",
-                    "--request-timeout=3s",
-                ],
-                root,
-                timeout=10,
-            )
-
-            if svc_check["returncode"] == 0 and svc_check["stdout"].strip():
-                node_port = svc_check["stdout"].strip()
-                # Show direct URL via the kind extraPortMapping host port
-                url = f"http://localhost:{host_port}"
-                result["actions"].append(
-                    {
-                        "path": f"k8s/{ns}/{app_id}",
-                        "key": "url.available",
-                        "severity": "info",
-                        "message": (
-                            f"{env.upper()} {app_id} accessible at: {url}{health_path}\
-"
-                            f" (kind nodePort {node_port} mapped to host:{host_port})"
-                        ),
-                        "phase": "audit",
-                    }
-                )
-            else:
-                # Service not deployed — show expected URL if extraPortMapping exists
-                if app_id in _HOST_PORT_MAP:
-                    url = f"http://localhost:{host_port}"
-                    result["actions"].append(
-                        {
-                            "path": f"k8s/{ns}/{app_id}",
-                            "key": "url.pending",
-                            "severity": "info",
-                            "message": f"{env.upper()} {app_id}: service not deployed yet — will be accessible at {url}{health_path} after deployment.",
-                            "phase": "audit",
-                        }
-                    )
-                else:
-                    # Unknown app — suggest port-forward as fallback
-                    pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {host_port}:80"
-                    result["actions"].append(
-                        {
-                            "path": f"k8s/{ns}/{app_id}",
-                            "key": "port-forward.command",
-                            "severity": "info",
-                            "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{host_port}",
-                            "phase": "audit",
-                        }
-                    )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
+    return assign_app_ports_to_file(root, app_id, role, dry_run)
 
 
 # ── CLI entry point ──────────────────────────────────────────────────────
@@ -5797,13 +6191,17 @@ def run_environment_lab(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: setup-lab, compose-up, compose-down, init-local-files, init-project-profile, "
-            "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
-            "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
-            "validate-gitea-runner, set-client-tools, set-project-stack, "
-            "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
-            "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
-            "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
+            "Available: "
+            "assign-app-ports, build-gitea-images, compose-down, compose-up, "
+            "ensure-headlamp, generate-gitea-token, health-check, init-local-files, "
+            "init-project-profile, init-quality-templates, provision-gitea-secrets, provision-grafana-token, "
+            "provision-lab-users, provision-nexus-repositories, prune-docker-leftovers, prune-kind-images, "
+            "prune-scaffold, push-to-gitea, renovate-gitea-token, scaffold-k8s, "
+            "set-client-tools, set-gitea-branch-protection, set-gitea-runner-env, set-monitoring-env, "
+            "set-openproject-env, set-project-stack, set-project-stack-metadata, set-quality-config, "
+            "set-semgrep-config, setup-k8s-access, setup-kind-cluster, setup-lab, "
+            "split-infra-env, validate-app-config, validate-docker-desktop, validate-docker-desktop-k8s, "
+            "validate-gitea-runner, validate-k8s-overlays, validate-observability, verify-gitea-token",
             file=sys.stderr,
         )
         return 1
@@ -5831,7 +6229,14 @@ def run_environment_lab(args: list[str]) -> int:
             root, dry_run
         ),
         "validate-observability": lambda: validate_observability(root, dry_run),
+        "provision-grafana-token": lambda: provision_grafana_token(root, dry_run),
         "validate-gitea-runner": lambda: validate_gitea_runner(root, dry_run),
+        "validate-app-config": lambda: validate_app_config(root, dry_run),
+        "validate-docker-desktop": lambda: validate_docker_desktop(root, dry_run),
+        "provision-nexus-repositories": lambda: provision_nexus_repositories(
+            root, dry_run
+        ),
+        "provision-gitea-secrets": lambda: provision_gitea_secrets(root, dry_run),
         "set-client-tools": lambda: set_client_tools(root, values, dry_run),
         "set-project-stack": lambda: set_project_stack(root, values, dry_run),
         "set-project-stack-metadata": lambda: set_project_stack_metadata(
@@ -5841,15 +6246,22 @@ def run_environment_lab(args: list[str]) -> int:
         "validate-docker-desktop-k8s": lambda: validate_docker_desktop_k8s(
             root, dry_run
         ),
+        "validate-k8s-overlays": lambda: validate_k8s_overlays(root, dry_run),
         "setup-kind-cluster": lambda: setup_kind_cluster(root, dry_run),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
+        "assign-app-ports": lambda: assign_app_ports_step(root, options, dry_run),
+        "prune-scaffold": lambda: prune_scaffold_shapes(root, dry_run),
+        "ensure-headlamp": lambda: ensure_headlamp(root, dry_run),
 
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
         "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
         "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
         "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
+        "health-check": lambda: health_check(root, dry_run),
+        "prune-docker-leftovers": lambda: prune_docker_leftovers(root, dry_run),
+        "prune-kind-images": lambda: prune_kind_images(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
 

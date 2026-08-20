@@ -61,7 +61,7 @@ Install with npx skills add <owner/repo@skill>
 
 def _make_profile(root: Path, frontend: str = "", backend: str = "", database: str = "") -> None:
     """Create project-profile.local.json with the given stack values."""
-    codex = root / ".codex"
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     stack = {}
     for domain, val in [("frontend", frontend), ("backend", backend), ("database", database)]:
@@ -75,8 +75,8 @@ def _make_profile(root: Path, frontend: str = "", backend: str = "", database: s
 
 
 def _make_manifest(root: Path, categories: dict | None = None) -> dict:
-    """Create a basic manifest.json in .codex/skills/."""
-    skills_dir = root / ".codex" / "skills"
+    """Create a basic manifest.json in .agents/skills/."""
+    skills_dir = root / ".agents" / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     if categories is None:
         categories = {
@@ -226,8 +226,70 @@ class TestSetupProjectGuidance:
                 )
 
         assert result["valid"] is True
-        manifest_path = tmp_path / ".codex" / "skills" / "manifest.json"
+        manifest_path = tmp_path / ".agents" / "skills" / "manifest.json"
         assert not manifest_path.exists(), "Manifest should not be written in dry-run mode"
+
+    def test_never_auto_installs_without_interactive_confirmation(
+        self, tmp_path: Path
+    ) -> None:
+        """Non-interactive (CI/non-TTY): skills are reported but NEVER installed."""
+        with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+            # Full skill dict so that without the gate the install loop WOULD
+            # attempt the install — proving the short-circuit is what blocks it.
+            mock_search.return_value = (
+                [
+                    {
+                        "package": "github/awesome-copilot",
+                        "skill": "react",
+                        "installs": 100000,
+                        "package_skill": "github/awesome-copilot@react",
+                    }
+                ],
+                [],
+            )
+            with patch("tools.sdd_cli.guidance._install_skill_via_npx") as mock_install:
+                with patch("tools.sdd_cli.guidance._update_manifest_with_skills") as mock_manifest:
+                    result = setup_project_guidance(
+                        tmp_path, {"frontend": "React"}, dry_run=False
+                    )
+
+        assert result["valid"] is True
+        assert result["foundSkills"] == ["github/awesome-copilot@react"]
+        assert result["installResults"] == []
+        keys = {item["key"] for item in result["actions"]}
+        assert "interactive.required" in keys
+        mock_install.assert_not_called()
+        mock_manifest.assert_not_called()
+
+    def test_installs_only_user_selected_skills_when_interactive(
+        self, tmp_path: Path
+    ) -> None:
+        """In an interactive TTY, only the user-selected skills are installed."""
+        with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+            mock_search.return_value = (
+                [
+                    {"package": "github/awesome-copilot", "skill": "react", "installs": 100000, "package_skill": "github/awesome-copilot@react"},
+                    {"package": "vercel-labs/agent-skills", "skill": "typescript", "installs": 50000, "package_skill": "vercel-labs/agent-skills@typescript"},
+                ],
+                [],
+            )
+            # Simulate a TTY where the user selects only skill #2 (typescript)
+            with patch("tools.sdd_cli.guidance.sys.stdin.isatty", return_value=True):
+                with patch("builtins.input", return_value="2"):
+                    with patch("tools.sdd_cli.guidance._install_skill_via_npx") as mock_install:
+                        mock_install.return_value = {"valid": True, "skillName": "typescript", "actions": []}
+                        with patch("tools.sdd_cli.guidance._update_manifest_with_skills") as mock_manifest:
+                            mock_manifest.return_value = {"valid": True, "newSkills": ["typescript"], "actions": []}
+                            result = setup_project_guidance(
+                                tmp_path, {"frontend": "React"}, dry_run=False,
+                                interactive=True,
+                            )
+
+        assert result["valid"] is True
+        # Only typescript (index 2) was installed — react was NOT auto-installed
+        mock_install.assert_called_once()
+        installed_names = [r.get("skillName") for r in result["installResults"]]
+        assert installed_names == ["typescript"]
 
 
 # ── discover_project_guidance ─────────────────────────────────────────────
@@ -235,16 +297,15 @@ class TestSetupProjectGuidance:
 
 class TestDiscoverProjectGuidance:
     def test_returns_stack_tags_from_profile(self, tmp_path: Path) -> None:
-        """Discover reads stack tags from profile."""
-        _make_manifest(tmp_path)
+        """Discover reads stack tags from profile (never from manifest)."""
         _make_profile(tmp_path, frontend="react")
 
         result = discover_project_guidance(tmp_path, dry_run=True)
         assert result["valid"] is True
         assert "react" in (result.get("stackTags") or [])
 
-    def test_filters_by_stack_tags(self, tmp_path: Path) -> None:
-        """Filtering by stackTags works correctly."""
+    def test_never_consults_local_manifest(self, tmp_path: Path) -> None:
+        """A rich local manifest must NOT influence discover results."""
         _make_manifest(
             tmp_path,
             categories={
@@ -262,11 +323,36 @@ class TestDiscoverProjectGuidance:
         )
         _make_profile(tmp_path, frontend="React")
 
+        with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+            mock_search.return_value = (
+                [{"package_skill": "github/awesome-copilot@react"}],
+                [],
+            )
+            result = discover_project_guidance(tmp_path, dry_run=True)
+
+        assert result["valid"] is True
+        # Answer comes from internet search, not from the local manifest.
+        assert result["foundSkills"] == ["github/awesome-copilot@react"]
+        assert result["skillCount"] == 1
+        mock_search.assert_called_once()
+
+    def test_searches_internet_for_each_stack_token(self, tmp_path: Path) -> None:
+        """Discover searches the internet per stack value token."""
+        _make_profile(tmp_path, frontend="React + TypeScript")
+        with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+            mock_search.return_value = ([], [])
+            result = discover_project_guidance(tmp_path, dry_run=True)
+
+        assert result["valid"] is True
+        # search actions emitted for each token
+        assert mock_search.call_count == 1
+        stack_values = mock_search.call_args[0][1]
+        assert "react + typescript" in stack_values["frontend"]
+
+    def test_skips_when_no_stack_values(self, tmp_path: Path) -> None:
+        """Without a stack, discover skips gracefully — no manifest required."""
         result = discover_project_guidance(tmp_path, dry_run=True)
         assert result["valid"] is True
-        assert "react" in (result.get("stackTags") or [])
-
-    def test_fails_gracefully_without_manifest(self, tmp_path: Path) -> None:
-        result = discover_project_guidance(tmp_path, dry_run=True)
-        assert result["valid"] is False
-        assert "Manifest not found" in str(result)
+        keys = {item["key"] for item in result["actions"]}
+        assert "guidance.skip" in keys
+        assert result["foundSkills"] == []

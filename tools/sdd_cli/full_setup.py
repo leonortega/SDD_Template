@@ -1,7 +1,11 @@
 """Full setup orchestration: prereqs, lab setup, tools, guidance.
 
 Usage:
-    python -m tools.sdd_cli full-setup [--dry-run true]
+    python -m tools.sdd_cli full-setup [--dry-run]
+
+Note: full-setup's --dry-run is an argparse store_true flag (the ``true``
+value form only applies to parse_pairs subcommands like environment-lab or
+full_setup's internal stages, e.g. ``setup-lab --dry-run true``).
 """
 
 from __future__ import annotations
@@ -10,11 +14,59 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, add_bucket_item, configure_result, run_native
+from ._shared import (
+    REPO_ROOT,
+    add_bucket_item,
+    configure_result,
+    native_command,
+    run_native,
+)
+
+# ── Stage progress helpers ─────────────────────────────────────────────
+
+
+def _print_stage_result(stage: dict[str, Any], stage_num: int) -> None:
+    """Print a one-line summary after each stage completes."""
+    valid = stage.get("valid", True)
+    mode = stage.get("mode", f"Stage{stage_num}")
+    if valid:
+        print(f"  ✓ {mode} complete.")
+    else:
+        findings = stage.get("findings", [])
+        errors = [f for f in findings if f.get("severity") == "error"]
+        if errors:
+            print(f"  ✗ {mode} failed: {errors[0].get('message', 'unknown error')}")
+        else:
+            print(f"  ✗ {mode} completed with warnings.")
+
+
+def _run_validation(root: Path, command: str) -> None:
+    """Run a validation command and print its result."""
+    try:
+        from .environment_lab import (
+            validate_app_config,
+            validate_docker_desktop,
+            validate_gitea_runner,
+            validate_observability,
+        )
+
+        validators = {
+            "validate-docker-desktop": validate_docker_desktop,
+            "validate-app-config": validate_app_config,
+            "validate-observability": validate_observability,
+            "validate-gitea-runner": validate_gitea_runner,
+        }
+        func = validators.get(command)
+        if func:
+            result = func(root, dry_run=False)
+            valid = result.get("valid", True)
+            status = "✓" if valid else "✗"
+            print(f"    {status} {command}")
+    except Exception as ex:
+        print(f"    ✗ {command}: {ex}")
 
 
 # ── Main entry point ─────────────────────────────────────────────────────
-
 
 def run_full_setup(
     args: list[str] | None = None,
@@ -44,20 +96,49 @@ def run_full_setup(
     stages: list[dict[str, Any]] = []
 
     # ── Stage 1: Prerequisites ──────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 1/4: PREREQUISITES")
+    print("=" * 60)
     stage1 = stage1_prerequisites(effective_root, effective_dry_run)
     stages.append(stage1)
+    _print_stage_result(stage1, 1)
+    if not stage1.get("valid", True):
+        print("\n  ✗ Stage 1 failed. Fix prerequisites and re-run.")
+        return 1
 
     # ── Stage 2: Lab Setup ──────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 2/4: LAB SETUP")
+    print("=" * 60)
     stage2 = stage2_lab_setup(effective_root, effective_dry_run)
     stages.append(stage2)
+    _print_stage_result(stage2, 2)
+    if not stage2.get("valid", True):
+        print("\n  ✗ Stage 2 failed. Check Docker and re-run.")
+        return 1
+
+    # ── Post-Stage 2 validations ────────────────────────────────────────
+    print("\n  Running post-setup validations...")
+    _run_validation(effective_root, "validate-docker-desktop")
+    _run_validation(effective_root, "validate-app-config")
+    _run_validation(effective_root, "validate-observability")
+    _run_validation(effective_root, "validate-gitea-runner")
 
     # ── Stage 3: Tool Installation (remaining) ──────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 3/4: TOOL INSTALLATION")
+    print("=" * 60)
     stage3 = stage3_tool_installation(effective_root, effective_dry_run)
     stages.append(stage3)
+    _print_stage_result(stage3, 3)
 
     # ── Stage 4: Project Guidance ───────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 4/4: PROJECT GUIDANCE")
+    print("=" * 60)
     stage4 = stage4_project_guidance(effective_root, effective_dry_run)
     stages.append(stage4)
+    _print_stage_result(stage4, 4)
 
     # ── Aggregate results ───────────────────────────────────────────────
     all_valid = all(s.get("valid", True) for s in stages)
@@ -98,6 +179,30 @@ def run_full_setup(
         print("\n  ℹ  Fix the issues above and re-run `full-setup`.")
         print("     The command is idempotent — completed steps will be skipped.\n")
 
+    # ── Grafana board pointer (shown once the lab is up) ────────────────
+    # Gated on the lab stage (index 1 = Stage2-LabSetup), not all_valid: the
+    # board exists as soon as the lab is up, even if a later advisory stage
+    # (tools/guidance) reported non-fatal errors. Suppressed in dry-run.
+    if not effective_dry_run and stages[1].get("valid", True):
+        print("\n" + "=" * 60)
+        print("  GRAFANA BOARD")
+        print("=" * 60)
+        print("  Open:  http://localhost:3001        (login: admin / admin)")
+        print("  Board: http://localhost:3001/d/agentic-e2e-health-board")
+        print()
+        print("  The board has two sections:")
+        print("    - Service Health         live status of every service")
+        print("      (green = up, red = down, gray = not deployed)")
+        print("    - Infrastructure Access  links to every tool with its")
+        print("      user/password")
+        print()
+        print("  Need a tool URL or its credentials? Use the Infrastructure")
+        print("  Access section on the board.\n")
+
+    if all_valid:
+        print("  Next: start a ticket or propose a change.")
+        print("  Run: \"start a ticket\" or \"propose a change\"\n")
+
     return 0 if all_valid else 1
 
 
@@ -134,12 +239,26 @@ def stage1_prerequisites(root: Path, dry_run: bool = False) -> dict[str, Any]:
     node_check = _check_node()
     steps.append(node_check)
     if not node_check.get("valid", True):
+        # Be precise: a common Windows case is node present but npm missing
+        # from PATH. The generic message would send the user to reinstall
+        # Node for nothing.
+        if node_check.get("nodeVersion") and not node_check.get("npmVersion"):
+            node_msg = (
+                f"Node.js found ({node_check['nodeVersion'].strip()}) but npm "
+                "was not found on PATH. Install Node.js LTS (includes npm) "
+                "from https://nodejs.org/ or add npm to PATH. Fix with: "
+                "python -m tools.sdd_cli prereqs install-node"
+            )
+        else:
+            node_msg = (
+                "Node.js and npm are required. "
+                "Download from https://nodejs.org/"
+            )
         add_bucket_item(
             result["findings"],
             "system/node",
             "node.missing",
-            "Node.js and npm are required. "
-            "Download from https://nodejs.org/",
+            node_msg,
             "error",
         )
 
@@ -265,19 +384,15 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
 
     The lab already installs: lefthook, grafana-mcp, openproject-mcp, gitea-mcp, k8s-mcp.
     Stage 3 installs the remaining tools:
-        1. codegraph (npx verify + MCP config)
-        2. codebase-memory (seed files + MCP registration)
-        3. claw-compactor (pip install into shared venv)
-        4. monorepo-docs-search (shared venv + MCP registration)
-        5. playwright MCP (register in .vscode/mcp.json)
-        6. validate-manifest (check skill manifest integrity)
+        1. ensure-mcp-servers (re-ensures ALL MCP registrations in .vscode/mcp.json —
+           playwright, grafana, k8s, gitea, openproject; idempotent, the lab already
+           installed the service MCPs in stage 2)
+        2. quality tools (gitleaks, trivy, trunk, coverage check)
+        3. validate-manifest (check skill manifest integrity)
     """
     from .tool_installer import (  # type: ignore[import-not-found]
-        ensure_codebase_memory,
-        install_claw_compactor,
-        install_codegraph,
-        install_monorepo_docs_search,
-        install_playwright_mcp,
+        ensure_mcp_servers,
+        ensure_quality_tools,
         validate_manifest,
     )
 
@@ -285,15 +400,11 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     sub_steps: list[dict[str, Any]] = []
 
     # Order matters:
-    #   - install-monorepo-docs-search creates the shared MCP venv (~/.mcp_shared_venv)
-    #   - install-claw-compactor depends on that venv existing
-    #   - ensure-codebase-memory, install-playwright-mcp only register in .vscode/mcp.json
+    #   - ensure-mcp-servers registers every MCP in .vscode/mcp.json
+    #   - ensure-quality-tools checks gitleaks, trivy, trunk, coverage (non-MCP)
     installers: list[tuple[str, Any]] = [
-        ("install-codegraph", install_codegraph),
-        ("install-monorepo-docs-search", install_monorepo_docs_search),
-        ("install-claw-compactor", install_claw_compactor),
-        ("ensure-codebase-memory", ensure_codebase_memory),
-        ("install-playwright-mcp", install_playwright_mcp),
+        ("ensure-mcp-servers", ensure_mcp_servers),
+        ("ensure-quality-tools", ensure_quality_tools),
         ("validate-manifest", validate_manifest),
     ]
 
@@ -335,103 +446,211 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
 
 
 def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Stage 4: Inspect project profile, discover relevant skills, print next steps.
+    """Stage 4: Interactive project guidance.
 
-    This is an advisory stage — it never sets valid=False. Even if the manifest
-    or profile is missing, it provides helpful guidance and returns valid=True.
+    1. Inspect project profile status
+    2. Search internet for stack-relevant skills (never local)
+    3. Show found skills and ask user which to install (interactive gate)
+    4. Install ONLY the user-selected skills via npx skills add
+
+    Non-interactive (CI): reports found skills but NEVER installs — no
+    TTY confirmation available means nothing is installed.
     """
     result = configure_result(
         "Stage4-ProjectGuidance", dry_run, write_enabled=not dry_run
     )
     steps: list[dict[str, Any]] = []
 
+    print("\n" + "=" * 60)
+    print("  STAGE 4: PROJECT GUIDANCE")
+    print("=" * 60)
+
     # 4a. Project profile status
     from ._shared import load_project_profile
 
     profile = load_project_profile(root)
-    profile_path = root / ".codex" / "project-profile.json"
+    profile_path = root / ".template" / "project-profile.json"
+
+    stack_values: dict[str, str] = {}
 
     if profile:
         stack = profile.get("stack", {})
-        if isinstance(stack, dict) and any(
-            v.get("applies") is True for v in stack.values() if isinstance(v, dict)
-        ):
-            frontend = stack.get("frontend", {}).get("value", "not set")
-            backend = stack.get("backend", {}).get("value", "not set")
-            database = stack.get("database", {}).get("value", "not set")
+        if isinstance(stack, dict):
+            for domain in ("frontend", "backend", "database"):
+                entry = stack.get(domain, {})
+                if isinstance(entry, dict) and entry.get("applies") is True:
+                    val = str(entry.get("value", "")).lower().strip()
+                    if val:
+                        stack_values[domain] = val
+
+        if stack_values:
+            frontend = stack_values.get("frontend", "?")
+            backend = stack_values.get("backend", "?")
+            database = stack_values.get("database", "?")
+            project_name = str(profile.get("projectName") or "").strip()
+            if not project_name:
+                print(
+                    "  [WARN] No project name set - set-project-stack requires values.name "
+                    "(no example/random names)."
+                )
+            print(f"  [OK] Stack configured: {frontend} / {backend} / {database}")
             steps.append({
                 "command": "stage4-profile",
                 "title": "Project profile",
                 "valid": True,
-                "message": f"Stack configured: frontend={frontend}, backend={backend}, database={database}.",
+                "message": f"Stack configured: project={project_name or '<unnamed>'}, frontend={frontend}, backend={backend}, database={database}.",
             })
         else:
+            print("  [WARN] Stack not fully configured.")
+            print("     Run: python -m tools.sdd_cli configure set-project-stack ...")
             steps.append({
                 "command": "stage4-profile",
                 "title": "Project profile",
                 "valid": True,
-                "message": (
-                    "Project profile exists but stack is not fully configured. "
-                    "Run `configure set-project-stack` to set frontend/backend/database."
-                ),
+                "message": "Project profile exists but stack is not fully configured.",
             })
     else:
         if profile_path.exists():
-            steps.append({
-                "command": "stage4-profile",
-                "title": "Project profile",
-                "valid": True,
-                "message": "Project profile found but could not be parsed.",
-            })
+            print("  [WARN] Project profile found but could not be parsed.")
         else:
-            steps.append({
-                "command": "stage4-profile",
-                "title": "Project profile",
-                "valid": True,
-                "message": (
-                    "No project profile found. Run `configure set-project-stack` "
-                    "to configure your project stack (frontend, backend, database)."
-                ),
-            })
+            print("  [WARN] No project profile found.")
+            print("     Run: python -m tools.sdd_cli configure set-project-stack ...")
+        steps.append({
+            "command": "stage4-profile",
+            "title": "Project profile",
+            "valid": True,
+            "message": "No project profile configured. Run `configure set-project-stack` first.",
+        })
 
-    # 4b. Discover relevant guidance from manifest
-    from .guidance import discover_project_guidance
+    # 4a2. No stack configured — prompt for it now (interactive TTY only) so
+    #      project guidance actually runs at the END of setup-lab. set-project-
+    #      stack records the profile AND runs guidance itself, so a single
+    #      prompt drives the whole skill-discovery flow. Non-TTY (CI/agent):
+    #      keep the report below — never auto-install (authority level 5).
+    stack_prompted = False
+    if not stack_values and not dry_run and sys.stdin.isatty():
+        print("\n  -- Project Stack Setup (required for project guidance) --")
+        print("     Enter your project name + stack; guidance will then discover")
+        print("     and install stack-relevant skills.")
+        try:
+            name = input("  Project name (required, e.g. dellop): ").strip()
+            frontend = (
+                input("  Frontend (react/vue/none, Enter=skip): ").strip() or "none"
+            )
+            backend = (
+                input("  Backend (fastapi/django/none, Enter=skip): ").strip() or "none"
+            )
+            database = (
+                input("  Database (postgresql/sqlite/none, Enter=skip): ").strip()
+                or "none"
+            )
+        except EOFError:
+            print("  (no interactive input available — set the stack later via ")
+            print("   `python -m tools.sdd_cli configure set-project-stack`)")
+            name = ""
+        if name:
+            from .environment_lab import set_project_stack
 
-    try:
-        guidance_result = discover_project_guidance(root, dry_run)
-        if guidance_result.get("valid", False):
-            skill_count = guidance_result.get("skillCount", 0)
-            stack_tags = guidance_result.get("stackTags", [])
-            steps.append({
-                "command": "stage4-guidance",
-                "title": "Skill discovery",
-                "valid": True,
-                "message": (
-                    f"Found {skill_count} relevant skill(s) for stack [{', '.join(stack_tags) or 'none set'}]."
-                    if skill_count > 0
-                    else "No stack-specific skills found. Run `configure set-project-stack` to enable stack-matched guidance."
-                ),
-            })
-            for action in guidance_result.get("actions", []):
-                result["actions"].append(action)
+            stack_result = set_project_stack(
+                root,
+                {
+                    "name": name,
+                    "frontend": frontend,
+                    "backend": backend,
+                    "database": database,
+                },
+                dry_run=False,
+            )
+            if stack_result.get("valid"):
+                stack_prompted = True
+                details = stack_result.get("guidanceDetails") or {}
+                found = details.get("foundSkills", []) or []
+                print(f"  [OK] Project stack recorded for {name!r}.")
+                print(f"  [OK] Project guidance found {len(found)} skill(s) online.")
+                steps.append({
+                    "command": "stage4-stack",
+                    "title": "Project stack (set via setup-lab prompt)",
+                    "valid": True,
+                    "message": (
+                        f"Recorded project {name!r} and ran project guidance "
+                        f"({len(found)} skill(s) found online)."
+                    ),
+                })
+            else:
+                for err in stack_result.get("errors", []):
+                    print(f"  [WARN] {err}")
+                steps.append({
+                    "command": "stage4-stack",
+                    "title": "Project stack",
+                    "valid": True,
+                    "message": "Stack prompt rejected (see warnings) — run `configure set-project-stack`.",
+                })
+
+    if dry_run or (not stack_values and not stack_prompted):
+        if not stack_values:
+            print("\n  [WARN] Cannot search for skills: no stack configured.")
+            print(
+                "     Run `python -m tools.sdd_cli configure set-project-stack ...`"
+                " then re-run `full-setup` (or setup-lab) to run project guidance."
+            )
         else:
-            steps.append({
-                "command": "stage4-guidance",
-                "title": "Skill discovery",
-                "valid": True,
-                "message": "Skill manifest not available. Stack-matched guidance will be shown after setup.",
-            })
-    except Exception as ex:
+            print(f"\n  (dry-run) Would search internet for stack-relevant skills.")
         steps.append({
             "command": "stage4-guidance",
-            "title": "Skill discovery",
+            "title": "Internet skill search",
             "valid": True,
-            "message": f"Skill discovery skipped: {ex}",
+            "message": "No stack configured or dry-run: skill search skipped.",
+        })
+        result["steps"] = steps
+        result["valid"] = True
+        return result
+
+    if stack_prompted:
+        # Guidance already ran inside set_project_stack — no second search.
+        result["steps"] = steps
+        result["valid"] = True
+        return result
+
+    # 4b. Search internet for stack-relevant skills
+    from .guidance import setup_project_guidance
+
+    print("\n  -- Internet Skill Search --")
+
+    try:
+        guidance_result = setup_project_guidance(
+            root, stack_values, dry_run=False, interactive=True
+        )
+
+        found = guidance_result.get("foundSkills", [])
+        installs = guidance_result.get("installResults", [])
+        installed_count = sum(1 for r in installs if r.get("valid"))
+
+        # Forward actions and findings
+        for action in guidance_result.get("actions", []):
+            result["actions"].append(action)
+        for finding in guidance_result.get("findings", []):
+            result["findings"].append(finding)
+
+        steps.append({
+            "command": "stage4-guidance",
+            "title": "Internet skill search",
+            "valid": True,
+            "message": f"Found {len(found)} skill(s) online, installed {installed_count}.",
+        })
+
+        print(f"\n  [OK] Stage 4 complete. Found {len(found)} skill(s), installed {installed_count}.")
+
+    except Exception as ex:
+        print(f"\n  [WARN] Internet skill search error: {ex}")
+        steps.append({
+            "command": "stage4-guidance",
+            "title": "Internet skill search",
+            "valid": True,
+            "message": f"Internet skill search skipped: {ex}",
         })
 
     result["steps"] = steps
     result["valid"] = True  # Advisory only — never fails
-
     return result
 
 
@@ -439,62 +658,54 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
 
 
 def _check_python() -> dict[str, Any]:
-    """Check Python version meets minimum requirement (3.11+)."""
-    from ._shared import PYTHON_REQUIRES
+    """Check Python version meets minimum requirement (3.11+).
 
-    version = sys.version_info[:2]
-    ok = version >= PYTHON_REQUIRES
+    Delegates to ``prereqs.check_python`` — single source of truth for the
+    prerequisite checks (prereqs.py, full_setup stage 1, environment-lab).
+    """
+    from .prereqs import check_python
+
+    result = check_python()
     return {
         "command": "prereq-python",
         "title": "Python 3.11+",
-        "valid": ok,
-        "current": f"{version[0]}.{version[1]}",
-        "required": f"{PYTHON_REQUIRES[0]}.{PYTHON_REQUIRES[1]}",
+        "valid": result["valid"],
+        "current": result["current"],
+        "required": result["required"],
     }
 
 
 def _check_node() -> dict[str, Any]:
-    """Check if Node.js and npm are available."""
-    node = run_native(["node", "--version"], REPO_ROOT, timeout=10)
-    npm = run_native(["npm", "--version"], REPO_ROOT, timeout=10)
-    ok = node["returncode"] == 0 and npm["returncode"] == 0
+    """Check if Node.js and npm are available.
+
+    Delegates to ``prereqs.check_node`` — single source of truth.
+    """
+    from .prereqs import check_node
+
+    result = check_node()
     return {
         "command": "prereq-node",
         "title": "Node.js + npm",
-        "valid": ok,
-        "nodeVersion": node["stdout"] if node["returncode"] == 0 else "",
-        "npmVersion": npm["stdout"] if npm["returncode"] == 0 else "",
+        "valid": result["valid"],
+        "nodeVersion": result.get("nodeVersion", ""),
+        "npmVersion": result.get("npmVersion", ""),
     }
 
 
 def _enable_powershell() -> dict[str, Any]:
-    """Enable PowerShell script execution (RemoteSigned) on Windows."""
-    if sys.platform != "win32":
-        return {
-            "command": "prereq-powershell",
-            "title": "PowerShell (Windows)",
-            "valid": True,
-            "message": "Not Windows; skipped.",
-        }
-    ps_result = run_native(
-        [
-            "powershell",
-            "-Command",
-            "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force",
-        ],
-        REPO_ROOT,
-        timeout=30,
-    )
-    ok = ps_result["returncode"] == 0
+    """Enable PowerShell script execution (RemoteSigned) on Windows.
+
+    Delegates to ``prereqs.enable_powershell_execution_policy`` — single
+    source of truth.
+    """
+    from .prereqs import enable_powershell_execution_policy
+
+    result = enable_powershell_execution_policy()
     return {
         "command": "prereq-powershell",
-        "title": "PowerShell execution policy",
-        "valid": ok,
-        "message": (
-            "PowerShell execution policy set to RemoteSigned."
-            if ok
-            else ps_result["stderr"]
-        ),
+        "title": "PowerShell (Windows)",
+        "valid": result["valid"],
+        "message": result.get("message", ""),
     }
 
 

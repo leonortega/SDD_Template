@@ -1,0 +1,93 @@
+# Architecture
+
+## Technology Stack And Tool Set
+
+This repository is a product-free SDLC shell. No product stack is currently selected.
+
+| Layer           | Status       | Detail                                                             |
+| --------------- | ------------ | ------------------------------------------------------------------ |
+| Frontend        | Not selected | No frontend framework configured                                   |
+| Backend         | Not selected | No backend framework configured                                    |
+| Database        | Not selected | No database engine configured                                      |
+| Languages       | None         | No languages configured until a product stack is selected |
+| Frameworks      | None         | Framework guidance will be added when a product stack is chosen    |
+| Test frameworks | None         | TDD and Playwright skills remain available for future product work |
+
+**Delivery tooling:** Gitea (source control + CI), OpenProject (tickets), Nexus (artifacts), Grafana/Seq/Dozzle
+(observability), Docker Desktop K8s (deployment target).
+
+For stack configuration, see `.template/project-profile.local.json` (ignored local overlay — stack lives only in this
+file). See `.template/project-profile.json` for tracked provider and workflow defaults.
+
+This repository is a product-free SDLC shell. The previous sample application has been removed so a new product can
+start from zero while reusing the delivery workflow.
+
+## System Topology
+
+- `.agents/skills` contains repo-local workflow skills for configuration, ticket start, planning, implementation
+orchestration, review, deployment, QA coordination, rollback, and retrospective work.
+- `.template/project-profile.json` is the tracked non-secret declaration for common providers, workflow, and quality
+defaults.
+- `.template/project-profile.local.json` is the ignored local overlay for stack choices and project-specific adapter
+experiments.
+- `.agents/skills/*/references/` contains reference docs for the fixed tools (OpenProject API, Gitea API, Nexus API).
+- `openspec/config.yaml` keeps the OpenSpec process available for future product specs.
+- `infra/` contains local platform infrastructure for ticketing, repository, artifact storage, deployment support, and
+observability.
+- `.gitea/workflows/` contains active CI/CD workflows (PR validation, build-and-deploy) for the lab environment and future product stacks.
+- `tools/` contains delivery helper tooling.
+- `apps/` holds one self-contained folder per deployable application (`src/`, `test/`, `deploy/`, `Dockerfile`,
+  `app.json`); `packages/` holds shared libraries consumed by apps. See ADR-0002.
+
+The product trees (`apps/`, `packages/`) are intentionally absent in the shell: the scaffold
+(`ScaffoldProjectFiles`) creates the `apps/` + `packages/` containers and one layout app skeleton named from the
+project (`apps/<project-slug>-<role>/`, the web skeleton `<project-slug>-web`) once a stack and project name are
+selected — never a root `src/`/`test/` pair. Project-name prefix rule: every app is named
+`<project-slug>-<role>` (e.g. `dellop-web`, `dellop-user-api`, `dellop-db`); the `validate-app-config` gate enforces
+it on `apps.json` (fixed infra job `db-bootstrap` exempt).
+Through the standard `set-project-stack` flow the name is required (no example or random app names); a direct
+scaffold call without a recorded name falls back to `apps/example/` purely as a layout placeholder.
+
+## Sources Of Truth
+
+- Current user request and active ticket context define the work.
+- `.template/project-profile.json` defines common selected providers and workflow defaults;
+`.template/project-profile.local.json` may add local stack choices before a product stack is committed.
+- Selected `.agents/skills/*/references/*.md` files define provider API behavior for the fixed tools.
+- OpenSpec artifacts define planned behavior for active product changes.
+- `.agents/skills/_shared/delivery-contract.md` defines agent-enforced delivery behavior.
+- `docs/` holds durable human-readable project context.
+
+## Product Stack
+
+No product stack is selected. Future work can draft stack choices in `.template/project-profile.local.json`. When the new
+product becomes real, update the tracked profile, docs, workflow jobs, deployment targets, quality gates, and OpenSpec
+specs together.
+
+Generic TDD and Playwright skills remain available for future implementation and browser-facing validation, but they are
+not tied to any current product app.
+
+## Versioned Consumer Installation
+
+This repository is the canonical SDLC tool source. Product repositories consume pinned releases through `python -m
+tools.sdd_cli template-installer install --version vMAJOR.MINOR.PATCH --target <repo>` and later `tool update` with a
+newer version. When `--version` is omitted, install resolves the latest final Git tag matching `vMAJOR.MINOR.PATCH` and
+ignores release-candidate tags.
+
+Installed repos get runtime workflow assets: Codex skills, docs, OpenSpec config, infrastructure templates, workflow
+templates, common non-secret config, and `tools/sdd_cli`. File selection is blacklist-based: every file under the source
+tree is included except the rule exclusions in `tools/sdd_cli/sdd-tool-data.json` (root `README.md`,
+`tools/sdd_cli/tests`, `openspec/changes`, `.trunk`, caches) and gitignored-and-untracked local files (secrets, runtime
+DB data, eval output). Tracked files — including tracked-but-ignored ones like `.vscode/mcp.json` — and
+untracked-but-not-ignored files are kept, so the installer is a blacklist walk, not a git whitelist.
+
+The consumer manifest `.template/sdd-tool-version.json` records the installed version, source repo, source commit,
+checksum, managed file list, and preserved local file list. Updates replace only managed files and leave consumer
+project code, secrets, local overlays, and product OpenSpec changes untouched.
+
+## Deployment Lane
+
+Deployment providers remain configured as shell capabilities. No app target is currently deployable.
+`infra/deployment/apps.json` is empty until a new product adds concrete artifacts, health checks, and environment
+configuration. Each app's `projectPath` points at `apps/<appId>/` (ADR-0002), making that folder the Docker build
+context; the env overlays in `infra/k8s/overlays/{dev,qa,prod}` compose the per-app `apps/<appId>/deploy/` manifests.
