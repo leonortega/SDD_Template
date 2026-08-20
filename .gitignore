@@ -15,13 +15,13 @@ bld/
 [Ll]og/
 [Ll]ogs/
 artifacts/
-.codex/delivery-context.local.json
-.codex/parallel-delivery.local.json
-.codex/tool-recommendations.local.json
-.codex/installed-skill-index.local.json
-.codex/installed-skill-index.cache.local.json
-.codex/agent-telemetry.local.jsonl
-.codex/agent-evals/results.local.json
+.template/delivery-context.local.json
+.template/parallel-delivery.local.json
+.template/tool-recommendations.local.json
+.template/installed-skill-index.local.json
+.template/installed-skill-index.cache.local.json
+.template/agent-telemetry.local.jsonl
+.agents/agent-evals/results.local.json
 TestResults/
 [Tt]est[Rr]esult*/
 test-results/
@@ -73,6 +73,7 @@ BenchmarkDotNet.Artifacts/
 # Node/frontend artifacts that may appear in future projects
 node_modules/
 dist/
+.angular/
 .vite/
 .next/
 .nuxt/
@@ -85,18 +86,26 @@ pnpm-debug.log*
 # Local container runtime state
 infra/openproject/openproject/
 infra/openproject/plane/
+infra/k8s/kind-kubeconfig-ci.yaml
 **/data/
 **/logs/
+
+# Exception: app EF Core Data layers are source code (the generic **/data/
+# rule above matches them case-insensitively on Windows, which would break CI
+# builds). Under the ADR-0002 per-app layout each app's Data layer lives under
+# apps/<app>/, so re-include any such directory at any depth.
+!apps/**/Data/
+!apps/**/Data/**
 
 # Local secrets and machine-specific environment files
 *.env
 !*.env.example
 .openproject.local.json
-.codex/client-tools.local.json
-.codex/project-profile.local.json
-.codex/quality.local.json
-.codex/azure-login.local.json
-.codex/environment-urls.local.json
+.template/client-tools.local.json
+.template/project-profile.local.json
+.template/quality.local.json
+.template/azure-login.local.json
+.template/environment-urls.local.json
 infra/monitoring/grafana/dashboards.local/
 *.db
 *.db-shm
@@ -110,5 +119,12 @@ Desktop.ini
 $RECYCLE.BIN/
 .cline/skills/
 .clinerules/
-.trunk/
+.trunk/*
+!.trunk/trunk.yaml
+# checkov --download-external-modules artifact (must never ship)
+.external_modules/
+# Windows null-device name (created by shell redirects like > nul)
 nul
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo

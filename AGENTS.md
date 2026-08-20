@@ -2,35 +2,43 @@
 
 # AGENTS.md
 
-This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and Codex skills as the source of truth before making changes.
+This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and skills as the source of truth
+before making changes.
 
 ## Mandatory First Step
 
 Before any tool call or file edit, every agent **must**:
 
-1. Call `skill('caveman')` and apply its full mode (terse fragments for commentary, status, blockers, summaries; normal prose only for authored artifacts).
+1. Call `skill('caveman')` and apply its full mode (terse fragments for commentary, status, blockers, summaries; normal
+prose only for authored artifacts).
 2. Read the **Start Here** section below and the files it lists.
 
-Failure to load Caveman first violates repo convention (authority level 5 per `docs/context-management.md`). If the skill tool reports "no skills available", report this as a setup gap and apply these rules manually: use terse fragments for commentary, status updates, blockers, summaries, and final handoff. Use normal prose only for authored artifacts (code blocks, documentation, config files).
+Failure to load Caveman first violates repo convention (authority level 5 per `docs/conventions/context-management.md`).
+If the skill tool reports "no skills available", report this as a setup gap and apply these rules manually: use terse
+fragments for commentary, status updates, blockers, summaries, and final handoff. Use normal prose only for authored
+artifacts (code blocks, documentation, config files).
 
 ## Start Here
 
-After the mandatory first step, inspect the relevant local context for the current workflow stage. **Assemble context in tier order** (see `.codex/delivery-policy.json` → `agentOptimization.contextTiers`):
+After the mandatory first step, inspect the relevant local context for the current workflow stage. **Assemble context in
+tier order** (see `.template/delivery-policy.json` → `agentOptimization.contextTiers`):
 
-1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.codex/skills/_shared/repo-startup.md`, `.codex/delivery-policy.json`, `.codex/mcp-instructions.md`
-2. **TIER 2 — Semi-stable** (cache once per session): `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/_shared/delivery-contract-core.md`, `.codex/skills/_shared/skill-startup.md`
+1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.agents/skills/_shared/repo-startup.md`,
+`.template/delivery-policy.json`, `.agents/mcp-instructions.md`
+2. **TIER 2 — Semi-stable** (cache once per session): `.agents/skills/_shared/delivery-contract.md`,
+`.agents/skills/_shared/delivery-contract-core.md`, `.agents/skills/_shared/skill-startup.md`, `knowledge/README.md`
 3. **TIER 3 — Stage-specific** (cache per stage): relevant `delivery-contract-{stage}.md`, `api-helpers.md`
 4. **TIER 4 — Dynamic** (never cached): user message, conversation history, tool outputs, live state
 
 Always read in order:
 
 - `README.md`
-- `.codex/skills/_shared/skill-startup.md`
-- `.codex/memory/memory_summary.md`
-- `.codex/memory/MEMORY.md`
-- `.codex/delivery-policy.json`
+- `.agents/skills/_shared/skill-startup.md`
+- `knowledge/README.md`
+- `.template/delivery-policy.json`
 
-Then read only the stage-specific docs, OpenSpec artifacts, skills, and workflow files needed for the task. Read local config only when the workflow needs those values, and never print secrets or credential-bearing values.
+Then read only the stage-specific docs, OpenSpec artifacts, skills, and workflow files needed for the task. Read local
+config only when the workflow needs those values, and never print secrets or credential-bearing values.
 
 Prefer repository-specific skills and scripts over ad hoc process decisions.
 
@@ -38,9 +46,12 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 
 ## Mandatory Skill Declaration
 
-Every agent **must** declare which skills it is activating for each step of the lab flow or any repo interaction. This includes both auto-activated skills and on-demand skills. The skills to list are determined by the **Mandatory Skill Catalog Review** process (see below).
+Every agent **must** declare which skills it is activating for each step of the lab flow or any repo interaction. This
+includes both auto-activated skills and on-demand skills. The skills to list are determined by the **Mandatory Skill
+Catalog Review** process (see below).
 
-**Format**: At the start of each response (after Caveman loading), include a `Skills used:` block. Reference each skill by its manifest category and name, and note whether it's active or skipped.
+**Format**: At the start of each response (after Caveman loading), include a `Skills used:` block. Reference each skill
+by its manifest category and name, and note whether it's active or skipped.
 
 **Authority level**: 5 (same as Mandatory First Step, Mandatory MCP Routing).
 
@@ -58,24 +69,32 @@ Skills used: caveman (full), ponytail (full)
 - kubernetes/kubernetes-manifest-authoring (skipped — no K8s deployment in this ticket)
 ```
 
-Failure to declare used skills violates repo convention. If a skill is auto-activated (caveman, ponytail), still declare it — do not assume it is implicit.
+Failure to declare used skills violates repo convention. If a skill is auto-activated (caveman, ponytail), still declare
+it — do not assume it is implicit.
 
 ## Mandatory Skill Catalog Review
 
-Before every task (read-only work excluded), every agent **must** consult the skill manifest at `.codex/skills/manifest.json` and determine which skills are relevant. This is a hard gate: no work begins until the catalog is reviewed and skills are declared.
+Before every task (read-only work excluded), every agent **must** consult the skill manifest at
+`.agents/skills/manifest.json` and determine which skills are relevant. This is a hard gate: no work begins until the
+catalog is reviewed and skills are declared.
 
 **Authority level**: 5 (same as Mandatory First Step, Mandatory Skill Declaration, Mandatory MCP Routing).
 
 ### Review Process
 
-1. **Read the manifest:** Open `.codex/skills/manifest.json` and inspect the `categories` section to find skill groups relevant to the current task.
-2. **Assess relevance:** For each relevant category, review its skills and determine which rules, patterns, or constraints apply:
+1. **Read the manifest:** Open `.agents/skills/manifest.json` and inspect the `categories` section to find skill groups
+relevant to the current task.
+2. **Assess relevance:** For each relevant category, review its skills and determine which rules, patterns, or
+constraints apply:
    - **Relevant** → Load the skill via `skill('<name>')` and apply its rules during the task.
-   - **Irrelevant** → State the specific reason it does not apply (e.g., "C# coding standards — this is a TypeScript project", "View transitions — no route animations in scope").
-3. **Declare with justification:** The `Skills used:` block (required by Mandatory Skill Declaration) must document the outcome of this review:
+   - **Irrelevant** → State the specific reason it does not apply (e.g., "C# coding standards — this is a TypeScript
+   project", "View transitions — no route animations in scope").
+3. **Declare with justification:** The `Skills used:` block (required by Mandatory Skill Declaration) must document the
+outcome of this review:
    - List every skill and whether it is active or skipped.
    - For skipped skills, include a brief rationale.
-4. **Blockers:** If a required skill exists but cannot be loaded or applied (e.g., broken `SKILL.md`, conflicting instructions), stop and report the blocker. Apply Tool And Skill Blocker Consent from `delivery-contract-core.md`.
+4. **Blockers:** If a required skill exists but cannot be loaded or applied (e.g., broken `SKILL.md`, conflicting
+instructions), stop and report the blocker. Apply Tool And Skill Blocker Consent from `delivery-contract-core.md`.
 
 ### Example Declaration
 
@@ -91,7 +110,8 @@ Skills used: caveman (full), ponytail (full)
 - kubernetes/kubernetes-manifest-authoring (skipped — no K8s deployment in this ticket)
 ```
 
-Omit this review only for purely read-only work (asking questions, exploring, reading files without changing them). Any mutation — including code changes, config edits, documentation updates, or PR reviews — triggers this gate.
+Omit this review only for purely read-only work (asking questions, exploring, reading files without changing them). Any
+mutation — including code changes, config edits, documentation updates, or PR reviews — triggers this gate.
 
 ## Environment Setup
 
@@ -101,7 +121,9 @@ To configure the local development and delivery environment, run the idempotent 
 python -m tools.sdd_cli environment-lab setup-lab
 ```
 
-This initialises local files, builds Gitea Actions images, starts Docker Compose services (Gitea, OpenProject, Nexus, Monitoring), and validates observability and CI runner prerequisites. Use `--dry-run true` to preview without making changes.
+This initialises local files, builds Gitea Actions images, starts Docker Compose services (Gitea, OpenProject, Nexus,
+Monitoring), and validates observability and CI runner prerequisites. Use `--dry-run true` to preview without making
+changes.
 
 For step-by-step control, run individual subcommands:
 
@@ -109,10 +131,10 @@ For step-by-step control, run individual subcommands:
 python -m tools.sdd_cli environment-lab init-local-files
 python -m tools.sdd_cli environment-lab compose-up
 python -m tools.sdd_cli environment-lab build-gitea-images
-python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"frontend": "react", "backend": "fastapi", "database": "postgresql"}'
+python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"name": "transportar", "frontend": "react", "backend": "fastapi", "database": "postgresql"}'
 ```
 
-See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
+See `.agents/skills/configure-dev-environment/SKILL.md` for available modes.
 
 ## Delivery Workflow
 
@@ -121,6 +143,28 @@ See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
 - Keep changes scoped to the ticket or explicit user request.
 - Update task, review, QA, and deployment state through the configured tools when applicable.
 - Do not skip required review, QA, artifact, or deployment gates.
+
+## Never Assume Tech Stack
+
+**Before any stack-dependent operation** (generating CI workflows, scaffolding code, selecting skills, configuring build
+commands, or any other task that depends on the product technology stack), every agent **must**:
+
+1. **Ask the user** explicitly what tech stack they want to use.
+2. **Wait for user confirmation** before reading or using any stack value from the project profile.
+3. **Never auto-detect or infer** the tech stack from file extensions, package.json, requirements.txt, or any other
+source code patterns.
+4. **Never assume** a default stack or fallback.
+
+**Project name is part of the same gate:** `set-project-stack` requires a real project name (`values.name`), so
+scaffolded appIds/folders never use example or random names. Ask the user for the project name together with the
+stack and pass it in `--values-json` (e.g. `{"name": "transportar", "frontend": "react", ...}`).
+
+This is a hard gate (authority level 5). The stack must come from an explicit user decision, not from automated
+detection or assumptions.
+
+**Rationale:** The repository is a product-free SDLC shell. The tech stack is a user decision, not something the agent
+should guess. Auto-detection can select the wrong stack, skip important user preferences, or generate incorrect
+configuration.
 
 ## Code Changes
 
@@ -131,15 +175,38 @@ See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
 - Add or update tests when behavior changes.
 - Do not revert unrelated user or workspace changes.
 - Do not commit generated artifacts unless the workflow explicitly requires them.
-- Use Ponytail full mode for code changes. Run `ponytail-review` during PR review as an extra complexity pass, not during implementation.
+- Use Ponytail full mode for code changes. Run `ponytail-review` during PR review as an extra complexity pass, not
+during implementation.
+
+### JSON Files: No Comments Allowed
+
+**Never add `//` or `/* */` comments to JSON files.** JSON is a data-interchange format, not a programming language — it
+does not support comments. Adding inline or block comments to `.json` files produces invalid JSON and breaks parsers, CI
+validators, and tools like `json.tool`.
+
+This applies to all `.json` files in the repository: `project-profile.json`, `delivery-policy.json`,
+`client-tools.*.json`, `quality.*.json`, `compose.yml` adjacent config files, and any other JSON configuration or data
+file.
+
+**Correct approach for adding context to JSON configuration:**
+
+1. Use a companion `.md` or `README.md` file adjacent to the JSON file to document fields, defaults, and usage.
+2. Use `.example.json` files with descriptive placeholder values (e.g., `"apiKey": "replace-with-your-api-key"`) — still
+no comments inside the JSON. Document field meanings in the companion `.md` file.
+3. Use descriptive key names and structured values within the JSON itself.
+
+**❌ HARD RULE (authority level 5):** If an agent adds `//` or `/* */` comments to a `.json` file, it is a process
+violation. Stop, remove the comments, validate the JSON with `python -m json.tool`, and retry.
 
 ### Skill Installation (Hybrid: npx skills + GitHub)
 
 Skills are installed using a hybrid approach:
+
 1. **Primary**: `npx skills add <owner/repo> --skill <name> --yes` (skills.sh registry)
 2. **Fallback**: GitHub raw content copy from configured sources
 
-The `install-skill` command tries npx first, and if that fails or npx is unavailable, falls back to fetching files directly from GitHub.
+The `install-skill` command tries npx first, and if that fails or npx is unavailable, falls back to fetching files
+directly from GitHub.
 
 #### List available skills from GitHub sources
 
@@ -147,7 +214,8 @@ The `install-skill` command tries npx first, and if that fails or npx is unavail
 python -m tools.sdd_cli tool-installer list-skills
 ```
 
-Reads configured sources from `.codex/skill-sources.json` (or `.codex/skill-sources.example.json`) and lists all discoverable skill directories from each GitHub repo.
+Reads configured sources from `.template/skill-sources.json` (or `.template/skill-sources.example.json`) and lists all
+discoverable skill directories from each GitHub repo.
 
 #### Install a skill
 
@@ -168,18 +236,20 @@ python -m tools.sdd_cli tool-installer install-skill --source awesome-copilot --
 
 #### Default configured sources
 
-The shipped `.codex/skill-sources.example.json` includes:
+The shipped `.template/skill-sources.example.json` includes:
 
 | Name | Repo | Description |
 |------|------|-------------|
 | `awesome-copilot` | `github/awesome-copilot` (skills/) | GitHub's awesome-copilot skills collection |
 | `anthropics` | `anthropics/skills` (skills/) | Anthropic's skills collection |
 
-Users can also install skills from any GitHub repo by passing `--repo`, `--skill-path`, and optionally `--token` for authenticated requests.
+Users can also install skills from any GitHub repo by passing `--repo`, `--skill-path`, and optionally `--token` for
+authenticated requests.
 
 ## Quality Gates
 
-Run configured quality checks before handoff whenever code or workflow behavior changes. Current gates are shell-level until a product stack is added.
+Run configured quality checks before handoff whenever code or workflow behavior changes. Current gates are shell-level
+until a product stack is added.
 
 Future product gates should define:
 
@@ -202,52 +272,37 @@ If a gate cannot be run, document the reason and residual risk.
 ## Secrets And Local Config
 
 - Never commit tokens, passwords, generated credentials, or local-only secrets.
-- Treat `*.local.*`, `.local` config files, and environment files as sensitive unless the repository explicitly marks them as examples.
+- Treat `*.local.*`, `.local` config files, and environment files as sensitive unless the repository explicitly marks
+them as examples.
 - Prefer example files for documented configuration values.
-
-## Repo-Local Token Saving
-
-**Claw Compactor — mandatory pre-prompt compression.** Before sending any prompt to an LLM (chat or agent), run the claw-compactor fusion pipeline in full mode on the accumulated workspace context, docs, and conversation history:
-
-```bash
-claw-compactor compress /path/to/workspace
-```
-
-Or use the Python API in a pre-prompt hook:
-
-```python
-from claw_compactor.fusion.engine import FusionEngine
-engine = FusionEngine()
-result = engine.compress(text=prompt_text, content_type="code")
-compressed = result["compressed"]
-```
-
-This is mandatory (authority level 5). Do not skip it. The fusion pipeline achieves 15–82% compression with zero LLM inference cost, preserving code identifiers, JSON structure, and log patterns.
-
-Apply Caveman full to all assistant chat prompts in this repository _after_ claw compression. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
-
-Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification.
 
 ## Agent Guidance
 
-When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow.
+When in doubt, first inspect the applicable skill under `.agents/skills/` and follow its workflow.
 
-Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract-core.md` when a required repo skill, command, memory rule, or configured tool/install path cannot be applied.
+Apply Tool And Skill Blocker Consent from `.agents/skills/_shared/delivery-contract-core.md` when a required repo skill,
+command, knowledge rule, or configured tool/install path cannot be applied.
 
-Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool output before acting.
+Use `knowledge/` as the reviewable repository knowledge layer. Knowledge is guidance only and must be verified against
+the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool
+output before acting.
 
-Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from `delivery-contract-core.md`.
+Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from
+`delivery-contract-core.md`.
 
 ## Mandatory Pre-Action Routing Check
 
-**Before every response that mutates state** (git, ticket provider, OpenSpec, comments, labels, API calls), every agent **must**:
+**Before every response that mutates state** (git, ticket provider, OpenSpec, comments, labels, API calls), every agent
+**must**:
 
 1. **Resolve the stage** — Identify which workflow stage the user's request maps to.
 2. **Check the routing table below** — Find the matching `User request / context` row.
 3. **Load the skill** — Read the corresponding SKILL.md and follow its Workflow section step by step.
-4. **If no match** — Stop and ask the user which workflow stage they want (e.g., "Start a ticket? Implement? Review? Deploy?").
+4. **If no match** — Stop and ask the user which workflow stage they want (e.g., "Start a ticket? Implement? Review?
+Deploy?").
 
 **This is a hard gate (authority level 5).** Do not:
+
 - Skip the routing check.
 - Implement workflow steps from general knowledge alone.
 - Rely on what a previous agent did — always re-check the table.
@@ -256,8 +311,10 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 ### ⚠️ Common Mistakes That Trigger This Gate
 
 - User says "implement" → MUST load `dev-flow-implement-ticket` skill. Do NOT start coding without it.
-- Step 15 in start-ticket says "use dev-flow-propose-change skill" → MUST load that skill and run its full artifact-generation workflow.
-- Telemetry says "OpenProject time entries" → MUST call `time-telemetry-upsert` via POST /api/v3/time_entries. If the API fails, stop and report. There is no alternative path.
+- Step 15 in start-ticket says "use dev-flow-propose-change skill" → MUST load that skill and run its full
+artifact-generation workflow.
+- Telemetry says "OpenProject time entries" → MUST call `time-telemetry-upsert` via POST /api/v3/time_entries. If the
+API fails, stop and report. There is no alternative path.
 
 ---
 
@@ -265,38 +322,44 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 
 | User request / context                 | Stage                              | Skill to load                                             |
 | -------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
-| Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.codex/skills/dev-flow-start-ticket/SKILL.md`            |
-| Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.codex/skills/dev-flow-propose-change/SKILL.md`          |
-| Implement a ticket / change            | `dev-flow-implement-ticket`        | `.codex/skills/dev-flow-implement-ticket/SKILL.md`        |
-| Continue implementation                | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
-| Review a pull request                  | `dev-flow-pr-review-agent`         | `.codex/skills/dev-flow-pr-review-agent/SKILL.md`         |
-| Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
-| Verify an OpenSpec change              | `dev-flow-verify-change`           | `.codex/skills/dev-flow-verify-change/SKILL.md`           |
-| Archive an OpenSpec change             | `dev-flow-archive-change`          | `.codex/skills/dev-flow-archive-change/SKILL.md`          |
-| Deploy to QA                           | `dev-ops-deploy-qa`                | `.codex/skills/dev-ops-deploy-qa/SKILL.md`                |
-| Deploy to production                   | `dev-ops-deploy-prod`              | `.codex/skills/dev-ops-deploy-prod/SKILL.md`              |
-| Rollback production                    | `dev-ops-rollback-prod`            | `.codex/skills/dev-ops-rollback-prod/SKILL.md`            |
-| Hotfix production                      | `dev-ops-hotfix-prod`              | `.codex/skills/dev-ops-hotfix-prod/SKILL.md`              |
-| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md`        |
-| CI deploy completed / post-deploy update | `grafana-board-update`             | `.codex/skills/grafana-board-update/SKILL.md`             |
-| File a QA bug                          | `dev-flow-file-qa-bug`             | `.codex/skills/dev-flow-file-qa-bug/SKILL.md`             |
-| Check pipeline status                  | `dev-flow-pipeline-status`         | `.codex/skills/dev-flow-pipeline-status/SKILL.md`         |
-| Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
-| Explore a change / ask questions       | `dev-flow-explore-change`          | `.codex/skills/dev-flow-explore-change/SKILL.md`          |
+| Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.agents/skills/dev-flow-start-ticket/SKILL.md`            |
+| Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.agents/skills/dev-flow-propose-change/SKILL.md`          |
+| Implement a ticket / change            | `dev-flow-implement-ticket`        | `.agents/skills/dev-flow-implement-ticket/SKILL.md`        |
+| Start or implement more than one ticket / multiple tickets | `dev-flow-parallel-ticket-coordinator` | `.agents/skills/dev-flow-parallel-ticket-coordinator/SKILL.md` |
+| Continue implementation                | `dev-flow-continue-implementation` | `.agents/skills/dev-flow-continue-implementation/SKILL.md` |
+| Review a pull request                  | `dev-flow-pr-review-agent`         | `.agents/skills/dev-flow-pr-review-agent/SKILL.md`         |
+| Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.agents/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
+| Verify an OpenSpec change              | `dev-flow-verify-change`           | `.agents/skills/dev-flow-verify-change/SKILL.md`           |
+| Archive an OpenSpec change             | `dev-flow-archive-change`          | `.agents/skills/dev-flow-archive-change/SKILL.md`          |
+| Deploy to QA                           | `dev-ops-deploy-qa`                | `.agents/skills/dev-ops-deploy-qa/SKILL.md`                |
+| Deploy to production                   | `dev-ops-deploy-prod`              | `.agents/skills/dev-ops-deploy-prod/SKILL.md`              |
+| Rollback production                    | `dev-ops-rollback-prod`            | `.agents/skills/dev-ops-rollback-prod/SKILL.md`            |
+| Hotfix production                      | `dev-ops-hotfix-prod`              | `.agents/skills/dev-ops-hotfix-prod/SKILL.md`              |
+| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md`        |
+| CI deploy completed / post-deploy update | `grafana-board-update`             | `.agents/skills/grafana-board-update/SKILL.md`             |
+| File and fix a QA bug                  | `dev-flow-file-qa-bug`             | `.agents/skills/dev-flow-file-qa-bug/SKILL.md`             |
+| Clean up temporary resources after a closed ticket | `dev-ops-cleanup-resources` | `.agents/skills/dev-ops-cleanup-resources/SKILL.md` |
+| Check pipeline status                  | `dev-flow-pipeline-status`         | `.agents/skills/dev-flow-pipeline-status/SKILL.md`         |
+| Run retrospective audit                | `dev-flow-retrospective-audit`     | `.agents/skills/dev-flow-retrospective-audit/SKILL.md`     |
+| Explore a change / ask questions       | `dev-flow-explore-change`          | `.agents/skills/dev-flow-explore-change/SKILL.md`          |
+| Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.agents/skills/dev-flow-scaffold-project/SKILL.md`        |
+| Update AI-updatable docs / knowledge   | `docs-knowledge-maintenance`        | `.agents/skills/docs-knowledge-maintenance/SKILL.md`      |
 
-After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
+> **Eval-internal route (not a user-requested stage):** `dev-ops-deploy-qa-approval-gate`
+> exists only in the agent-eval routing matrix (`.agents/agent-evals/`) as the intermediate
+> outcome when QA is pending user approval — the agent stops and asks, it never auto-approves.
+> It is not a stage to load; on approval the flow continues to `dev-ops-deploy-qa`. See
+> `docs/workflows/implementation-deploy-flows.md` (Section 2) for the full routing matrix.
+
+After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step
+requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
 
 ## Mandatory MCP Routing
 
-This repository has two MCP servers for content search — each with a strict domain. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when searching repository content:
-
-| Content Type                                    | MCP Server             | Tool                                                                                | Reason                                                       |
-| ----------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Documentation (`.md`, `.mdx`, skills, adapters) | `monorepo-docs-search` | `search_documentation`                                                              | BM25 + FlashRank cross-encoder — token-efficient snippets    |
-| Source code (all other files)                   | `codebase-memory-mcp`  | `search_graph`, `get_architecture`, `trace_path`, `get_code_snippet`, `query_graph` | BM25 ranking + structural boosting — definitions rank first  |
-| Source code (all other files)                   | `codebase-memory-mcp`  | `search_code`                                                                       | Grep + graph-enriched dedup — for raw regex/pattern matching |
-
-This routing is mandatory (authority level 5 per `docs/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md`). Do not skip it. Do not use raw grep as the first approach. Do not cross-search domains between MCPs.
+This repository relies on the **service MCP servers** (gitea, openproject, grafana, kubernetes) for lab-service
+interactions. Every agent **must** follow `.agents/mcp-instructions.md` (the definitive MCP routing contract) when
+interacting with lab services. Repository content search uses the agent's built-in file/search tools — there are no
+dedicated content-search MCP servers.
 
 ## Skill Activation Configuration
 
@@ -304,5 +367,7 @@ This routing is mandatory (authority level 5 per `docs/context-management.md` �
 - Skills are applied in priority order: caveman > ponytail > others
 - Caveman skill auto-activates with intensity: full (unless specified otherwise)
 - Ponytail skill auto-activates on every prompt with intensity: full
-- Other skills, MCP servers, and capabilities activate per the **Mandatory Pre-Implementation Skill Review** scan results — the scan determines which skills are relevant; activation triggers per-task when implementation begins
-- The scan is a **code-change gate**, not a conversation-start gate — purely read-only work (asking questions, exploring, reading files) does not require the scan
+- Other skills, MCP servers, and capabilities activate per the **Mandatory Pre-Implementation Skill Review** scan
+results — the scan determines which skills are relevant; activation triggers per-task when implementation begins
+- The scan is a **code-change gate**, not a conversation-start gate — purely read-only work (asking questions,
+exploring, reading files) does not require the scan

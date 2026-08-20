@@ -15,48 +15,66 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, CliError
+from ._shared import REPO_ROOT, CliError, native_command
 
 
 def run_eval(root: Path | None = None) -> dict[str, Any]:
     """Run Promptfoo evaluation and return structured results.
 
     Returns a dict with pass/fail count, duration, and per-test details.
+    Raises CliError when promptfoo produces no usable results file, so a
+    failed run is loud instead of a false "0 tests passed" success.
     """
     base = root or REPO_ROOT
-    config_path = base / ".codex" / "agent-evals" / "promptfooconfig.yaml"
+    config_path = base / ".agents" / "agent-evals" / "promptfooconfig.yaml"
+    results_path = base / ".agents" / "agent-evals" / "results.tmp.json"
 
     if not config_path.exists():
         raise CliError(f"Eval config not found: {config_path}")
 
-    # Install promptfoo if not available
+    # Drop any stale results file up front: a previous run's output must
+    # never be mistaken for this run's results if promptfoo fails to write.
+    results_path.unlink(missing_ok=True)
+
+    # Make sure the npx toolchain exists (Windows needs the explicit npx.cmd
+    # name — a bare "npx" raises FileNotFoundError with shell=False).
     try:
         subprocess.run(  # nosec
-            ["npx", "promptfoo", "--version"],
+            native_command("npx") + ["--version"],
             capture_output=True,
             check=False,
             timeout=30,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as err:
         raise CliError(
-            "promptfoo is not available. Install with: npm install -g promptfoo"
+            "npx (Node.js package runner) is not available. Install Node.js "
+            "LTS (includes npm/npx) from https://nodejs.org/ and re-run. "
+            "Without npx you can still verify every eval case with the "
+            "deterministic Python provider — see .agents/agent-evals/README.md."
         ) from err
 
     # Run eval without cache
+    # Decode child output as UTF-8 explicitly: promptfoo's console table uses
+    # box-drawing characters, and with text=True Python defaults to the locale
+    # encoding (cp1252 on Windows), which crashes the reader thread with
+    # UnicodeDecodeError. errors="replace" keeps a stray byte from breaking
+    # the run (the structured results come from the JSON file, not stdout).
     try:
         result = subprocess.run(  # nosec
-            [
-                "npx",
+            native_command("npx")
+            + [
                 "promptfoo",
                 "eval",
                 "--config",
                 str(config_path),
                 "--no-cache",
                 "--output",
-                str(base / ".codex" / "agent-evals" / "results.tmp.json"),
+                str(results_path),
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,
         )
     except subprocess.TimeoutExpired as err:
@@ -67,7 +85,6 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
     returncode = result.returncode
 
     # Parse results output
-    results_path = base / ".codex" / "agent-evals" / "results.tmp.json"
     results: dict[str, Any] = {
         "returncode": returncode,
         "passed": 0,
@@ -78,24 +95,65 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
         "stderr_summary": stderr.strip()[:2000] if stderr else "",
     }
 
-    if results_path.exists():
-        try:
-            raw = json.loads(results_path.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
-                results["tests"] = raw
-                results["total"] = len(raw)
-                for test in raw:
-                    if test.get("pass"):
-                        results["passed"] += 1
-                    else:
-                        results["failed"] += 1
-            elif isinstance(raw, dict):
-                results["results_json"] = raw
-        except (json.JSONDecodeError, KeyError):
-            pass
-        results_path.unlink(missing_ok=True)
+    if not results_path.exists():
+        raise CliError(
+            "promptfoo produced no results file - the eval did not run.\n"
+            f"promptfoo exited with code {returncode}.\n"
+            f"stdout: {stdout.strip()[:500] or '(empty)'}\n"
+            f"stderr: {stderr.strip()[:500] or '(empty)'}\n"
+            "If this is the Windows npm cache EBUSY/EPERM issue, see the "
+            "workaround in .agents/agent-evals/README.md."
+        )
 
-    results["valid"] = results["failed"] == 0
+    try:
+        raw = json.loads(results_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        raise CliError(
+            f"promptfoo results file could not be parsed: {results_path}\n{err}"
+        ) from err
+
+    # Promptfoo writes different JSON shapes depending on the output path:
+    #   - `--output` file: v3 envelope {"results": {"results": [rows...]}}
+    #   - `--output`/`--json` older: {"results": [rows...]}
+    #   - bare list of rows (very old / custom exporters)
+    # Rows mark pass/fail either via `pass` or `success`, and grading details
+    # live in `gradingResult.pass` when the per-row flag is absent.
+    if isinstance(raw, dict):
+        results["results_json"] = raw
+        nested = raw.get("results")
+        if isinstance(nested, dict):
+            # v3 envelope: results.results is the row list
+            nested = nested.get("results")
+        raw = nested if isinstance(nested, list) else None
+
+    if not isinstance(raw, list):
+        raise CliError(
+            f"promptfoo results file has an unexpected format: {results_path}"
+        )
+
+    results["tests"] = raw
+    results["total"] = len(raw)
+    for test in raw:
+        passed = test.get("pass")
+        if passed is None:
+            passed = test.get("success")
+        if passed is None:
+            grading = test.get("gradingResult") or {}
+            passed = grading.get("pass")
+        if passed:
+            results["passed"] += 1
+        else:
+            results["failed"] += 1
+
+    if results["total"] == 0:
+        raise CliError(
+            "promptfoo produced 0 test results - refusing to report "
+            "'0 tests passed'. Check the eval config and the promptfoo "
+            "output above."
+        )
+    results_path.unlink(missing_ok=True)
+
+    results["valid"] = returncode == 0 and results["failed"] == 0
     return results
 
 
@@ -127,10 +185,15 @@ def show_view(root: Path | None = None) -> int:
     """Open Promptfoo web UI for viewing results."""
     base = root or REPO_ROOT
     try:
-        subprocess.run(["npx", "promptfoo", "view"], cwd=base, check=False)  # nosec
+        subprocess.run(  # nosec
+            native_command("npx") + ["promptfoo", "view"], cwd=base, check=False
+        )
         return 0
     except FileNotFoundError:
-        print("promptfoo not found. Install with: npm install -g promptfoo")
+        print(
+            "promptfoo not found. Install with: npm install -g promptfoo. "
+            "Deterministic fallback documented in .agents/agent-evals/README.md."
+        )
         return 1
 
 

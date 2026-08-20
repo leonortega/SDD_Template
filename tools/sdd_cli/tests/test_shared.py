@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import http
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.sdd_cli._shared import (
+    client_tools_project_identifier_findings,
     find_meta,
     get_high_risk_patterns,
+    http_json,
     normalize_stack_domain,
     profile_audit_findings,
     remove_empty_parents,
@@ -133,7 +138,7 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_warning_when_profile_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
+            (root / ".template").mkdir()
             findings = profile_audit_findings(root)
             keys = {item["key"] for item in findings}
             self.assertIn("missing.profile", keys)
@@ -142,7 +147,7 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_no_findings_when_both_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text("{}", encoding="utf-8")
             (codex / "project-profile.schema.json").write_text("{}", encoding="utf-8")
@@ -152,13 +157,66 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_warning_when_schema_missing_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text("{}", encoding="utf-8")
             findings = profile_audit_findings(root)
             keys = {item["key"] for item in findings}
             self.assertNotIn("missing.profile", keys)
             self.assertIn("missing.schema", keys)
+
+
+class ClientToolsProjectIdentifierFindingsTests(unittest.TestCase):
+    """Tests for client_tools_project_identifier_findings."""
+
+    @staticmethod
+    def _write(root: Path, openproject: dict) -> None:
+        codex = root / ".template"
+        codex.mkdir(parents=True, exist_ok=True)
+        (codex / "client-tools.local.json").write_text(
+            json.dumps({"openProject": openproject}), encoding="utf-8"
+        )
+
+    def test_placeholder_identifier_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {"projectIdentifier": "replace-with-project-identifier"})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("openProject.projectIdentifier", findings[0]["key"])
+            self.assertEqual("warning", findings[0]["severity"])
+
+    def test_missing_identifier_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("openProject.projectIdentifier", findings[0]["key"])
+
+    def test_real_identifier_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {"projectIdentifier": "e2eproject"})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
+
+    def test_missing_file_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
+
+    def test_non_dict_openproject_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir(parents=True)
+            (codex / "client-tools.local.json").write_text(
+                '{"openProject": "not-a-dict"}', encoding="utf-8"
+            )
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
 
 
 class HighRiskPatternsTests(unittest.TestCase):
@@ -177,6 +235,128 @@ class HighRiskPatternsTests(unittest.TestCase):
         for pattern in get_high_risk_patterns():
             with self.subTest(pattern=pattern):
                 self.assertEqual(pattern, pattern.lower())
+
+
+class HttpJsonTests(unittest.TestCase):
+    """Tests for http_json — bearer/basic/no-auth header handling and error path.
+
+    The connection classes are patched out (no network); only header assembly,
+    request wiring, and the (0, error) fallback are exercised.
+    """
+
+    @staticmethod
+    def _fake_connection(captured: dict) -> type:
+        class FakeResponse:
+            status = 200
+
+            def read(self) -> bytes:
+                return b'{"ok": true}'
+
+        class FakeConnection:
+            def __init__(self, host, port=None, timeout=None) -> None:
+                captured["host"] = host
+                captured["port"] = port
+                captured["timeout"] = timeout
+
+            def request(self, method, path, body=None, headers=None) -> None:
+                captured["method"] = method
+                captured["path"] = path
+                captured["body"] = body
+                captured["headers"] = headers
+
+            def getresponse(self) -> FakeResponse:
+                return FakeResponse()
+
+            def close(self) -> None:
+                pass
+
+        return FakeConnection
+
+    def test_bearer_auth_sets_authorization_header(self) -> None:
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPConnection", FakeConnection):
+            status, data = http_json(
+                "POST",
+                "http://localhost:8080/api/v3/work_packages",
+                body={"subject": "x"},
+                bearer="tok-123",
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(data, '{"ok": true}')
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["path"], "/api/v3/work_packages")
+        self.assertEqual(captured["body"], '{"subject": "x"}')
+        self.assertEqual(captured["host"], "localhost")
+        self.assertEqual(captured["port"], 8080)
+        self.assertEqual(
+            captured["headers"]["Authorization"], "Bearer tok-123"
+        )
+
+    def test_bearer_wins_over_basic_auth(self) -> None:
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPConnection", FakeConnection):
+            http_json(
+                "GET",
+                "http://localhost:3000/api/v1/user",
+                basic=("user", "pass"),
+                bearer="tok-456",
+            )
+        self.assertEqual(
+            captured["headers"]["Authorization"], "Bearer tok-456"
+        )
+
+    def test_basic_auth_sets_base64_authorization_header(self) -> None:
+        import base64
+
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPConnection", FakeConnection):
+            http_json(
+                "GET",
+                "http://localhost:8088/service/rest/v1/status",
+                basic=("admin", "pass123"),
+            )
+        expected = "Basic " + base64.b64encode(b"admin:pass123").decode()
+        self.assertEqual(captured["headers"]["Authorization"], expected)
+
+    def test_no_auth_sets_no_authorization_header(self) -> None:
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPConnection", FakeConnection):
+            http_json("GET", "http://localhost:3000/api/health")
+        self.assertNotIn("Authorization", captured["headers"])
+
+    def test_https_uses_https_connection_class(self) -> None:
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPSConnection", FakeConnection):
+            http_json("GET", "https://host.docker.internal:6443/api")
+        self.assertEqual(captured["host"], "host.docker.internal")
+        self.assertEqual(captured["port"], 6443)
+
+    def test_query_string_is_preserved_in_request_path(self) -> None:
+        captured: dict = {}
+        FakeConnection = self._fake_connection(captured)
+        with patch.object(http.client, "HTTPConnection", FakeConnection):
+            http_json("GET", "http://localhost:8088/service?name=foo&x=1")
+        self.assertEqual(captured["path"], "/service?name=foo&x=1")
+
+    def test_connection_failure_returns_zero_status(self) -> None:
+        class ExplodingConnection:
+            def __init__(self, host, port=None, timeout=None) -> None:
+                pass
+
+            def request(self, method, path, body=None, headers=None) -> None:
+                raise ConnectionRefusedError("boom")
+
+        with patch.object(http.client, "HTTPConnection", ExplodingConnection):
+            status, err = http_json(
+                "GET", "http://localhost:3000/api/v1/user"
+            )
+        self.assertEqual(status, 0)
+        self.assertIn("boom", err)
 
 
 if __name__ == "__main__":

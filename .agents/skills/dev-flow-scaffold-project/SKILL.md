@@ -1,0 +1,257 @@
+---
+name: dev-flow-scaffold-project
+license: MIT
+description: >-
+  >- Generate the implementation scaffold for the selected tech stack using AI, not a fixed template list. Reads
+  frontend/backend/database from project-profile.local.json, runs the Mandatory Skill Catalog Review to activate the
+  relevant skills (architecture, TDD, CI, k8s), and generates build manifests, test setup, Dockerfiles, CI workflows,
+  and k8s artifacts for the actual stack. Use automatically after set-project-stack (scaffoldRequired/nextStage), or
+  when the user asks to scaffold the project.
+---
+
+<!-- TIER 3: STAGE-SPECIFIC - AI-driven project scaffold after stack selection -->
+
+# AI-Driven Project Scaffold
+
+## Overview
+
+The template repo is **intentionally stack-agnostic** — it ships no `package.json`,
+no `playwright.config.ts`, no `apps/` product folders, and no Dockerfiles. The
+stack is defined by the user via `set-project-stack` and recorded in
+`.template/project-profile.local.json` (`stack.frontend`, `stack.backend`,
+`stack.database`).
+
+`set-project-stack` only creates the deterministic skeleton (`apps/` + `packages/`,
+with one app named from the project — `apps/<project-slug>-<role>/` (the layout
+marker is the project's web skeleton, so `<project-slug>-web`) — documenting the
+per-app layout (ADR-0002; the project name is required by `set-project-stack`, so
+the template never ships example or random names; there is never a root `src/` +
+`test/` pair) and then marks `scaffoldRequired: true` with
+`nextStage: dev-flow-scaffold-project`.
+**This skill resolves everything else as an AI** — the exact files depend on the
+chosen stack, so they can never come from a fixed list of combinations.
+
+> **Rule: never assume a stack.** Read the actual `stack.frontend` /
+> `stack.backend` / `stack.database` values before generating anything. If the
+> stack is unset, incomplete, or ambiguous, ask the user — do not guess.
+
+## Shared Context
+
+Run inside the active ticket's delivery context. Read
+`.agents/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md` before scaffolding, and keep the
+generated scaffold scoped to the ticket's acceptance criteria. The stack must
+come from the user's explicit decision in `.template/project-profile.local.json` —
+never inferred from existing files.
+
+## When To Use
+
+- Automatically: right after `set-project-stack` (the CLI returns
+  `nextStage: dev-flow-scaffold-project`).
+- On request: "scaffold the project", "generate the project files", "create the
+  initial structure for the stack".
+
+## Workflow
+
+Follow these steps in order. Do not skip steps.
+
+### 1. Read the stack
+
+Read `.template/project-profile.local.json` and extract `projectName` plus
+`stack.frontend`, `stack.backend`, `stack.database` (each is
+`{applies: bool, value: str}`). Also read `stack.languages`, `stack.frameworks`,
+`stack.testFrameworks` when present. Summarize the project for the user, e.g.:
+"Transportar — Frontend: React + TypeScript · Backend: FastAPI · Database: PostgreSQL".
+
+If `metadataValidationStatus == "needs-user-validation"`, confirm the stack
+with the user before scaffolding. If `projectName` is missing or a placeholder,
+ask the user for the real project name — never invent or reuse a sample name.
+
+### 2. Mandatory Skill Catalog Review
+
+Consult `.agents/skills/manifest.json` (per AGENTS.md) and activate the skills
+relevant to the selected stack. Typical activations:
+
+- Architecture: `clean-architecture`, `clean-code`, `domain-modeling`,
+  `architecture-patterns` — structure of `apps/<appId>/src/` per stack
+- Testing: `tdd`, `e2e-testing-patterns`, `webapp-testing` —
+  unit/integration/architecture test setup
+- CI: `configure-ci-workflows` — build/test/package workflows for the stack
+- Deployment: `dev-ops-configure-k8s`, `kubernetes-manifest-authoring` —
+  Dockerfiles + k8s artifacts for the stack's runtimes
+- Quality: `ponytail` (auto), `design-pattern-review` as applicable
+
+Declare the activated skills in a `Skills used:` block. State why a skill was
+skipped when it does not apply (e.g., "C# coding standards — this is a
+TypeScript project").
+
+### 3. Resolve the scaffold per stack (AI decision)
+
+**❌ HARD GATE (authority level 5): Create test folder structure.** Before generating any product code, create the 4 test subfolders for every app:
+
+```bash
+mkdir -p apps/<appId>/test/unit
+mkdir -p apps/<appId>/test/integration
+mkdir -p apps/<appId>/test/e2e
+mkdir -p apps/<appId>/test/architecture
+touch apps/<appId>/test/unit/.gitkeep
+ touch apps/<appId>/test/integration/.gitkeep
+touch apps/<appId>/test/e2e/.gitkeep
+touch apps/<appId>/test/architecture/.gitkeep
+```
+
+This is non-negotiable. If the scaffold skips this, implementation is blocked. See `.agents/skills/_shared/test-requirements.md` §HARD GATE: Test Folder Structure.
+
+**Project-name prefix rule (naming):** name every generated app
+`<project-slug>-<role>` — the project name is the mandatory prefix. Example:
+project `dellop` → `apps/dellop-web/`, `apps/dellop-user-api/`, `apps/dellop-db/`
+(appIds `dellop-web`, `dellop-user-api`, `dellop-db`). Never use unprefixed
+appIds (`web`, `user-api`, `db`). The `validate-app-config` gate enforces this on
+`apps.json` (every registered appId must start with `<project-slug>-`; the fixed
+infra bootstrap job `db-bootstrap` is exempt), and CI runs it in
+`pr-validation.yml`. Kebab-case only — underscores fail the DNS-1123 Service-name
+hard gate.
+
+For each domain, decide what the stack's **native tooling and conventions**
+require, then generate the files. Examples, never exhaustive:
+
+- **Frontend JS/TS** (react, vue, angular, svelte, next, nuxt, ...): folder
+  layout under `apps/<appId>/src/`, `package.json` (dev/build/test/e2e scripts),
+  test framework config (vitest/jest), E2E tool (playwright/cypress),
+  `apps/<appId>/test/e2e/` folder, `playwright.config.ts`/`cypress.config.ts`
+  (BASE_URL-aware for QA).
+- **Frontend .NET** (blazor, asp.net razor, mvc): solution + project layout
+  under `apps/<appId>/src/`, `*.csproj`, test project(s), `dotnet test` wiring.
+- **Backend** (fastapi/django/flask, node/express, spring, rails, go, ...):
+  app entry point, dependency manifest (`requirements.txt`, `package.json`,
+  `pom.xml`, `Gemfile`, `go.mod`, ...), settings/env handling, `/health`
+  endpoint (k8s probes use it), test framework per stack.
+- **Database** (postgres, mysql, sqlite, mongodb, redis, ...): connection
+  config, migration tooling, dev seed/scripts.
+
+Generate only what the stack needs. Do not generate files for a stack that was
+not selected (`applies: false`).
+
+### 4. Generate build/deploy artifacts
+
+- **Dockerfiles** per app role (web + api) matching the stack's runtime:
+  multi-stage builds, correct base images, healthchecks (`/health`), non-root
+  user when practical. See `dev-ops-configure-k8s` / `kubernetes-manifest-authoring`.
+- **CI workflows** for the stack's build/test commands via
+  `configure-ci-workflows`.
+- **K8s manifests** only if missing (`scaffold-k8s` already generates the
+  deterministic Deployment/Service/Kustomize from `apps.json`; the AI supplies
+  the stack-specific Dockerfiles/nginx.conf/.dockerignore).
+
+### 5. Scaffold quality requirements
+
+Apply these hard-won requirements to **every** generated scaffold. They are
+non-negotiable — each one prevented a real failure in a consumer delivery:
+
+1. **Runtime write-access (non-root container):** if the app writes to its
+   workdir on boot (SQLite `Data Source=todos.db`, file caches, uploads), the
+   Dockerfile must `RUN chown -R <uid>:<gid> /app` **before** the `USER <non-root>`
+   line — otherwise the container CrashLoopBackOffs with
+   `unable to open database file`. Verify with `docker run` + curl a DB-backed
+   endpoint **before** merging (catches the crash loop in seconds without a
+   cluster round-trip).
+2. **Source-tree hygiene vs. `.gitignore`:** never let a generic `**/data/`
+   rule swallow a source `Data/` layer. On Windows (`core.ignorecase`) the rule
+   matches `Data/` case-insensitively and silently drops the file from CI
+   checkouts → `CS0234: 'Data' does not exist`. Add negations
+   (`!apps/**/Data/`, `!apps/**/Data/**`) and verify with
+   `git check-ignore <file>` + `git ls-files`. A green local build is **not**
+   proof the CI build will work.
+3. **Dependency versions must be current enough for SCA:** default frontend
+   scaffolds to **React ≥ 19.2.7 + react-router 8** (`react-router-dom` was
+   merged into `react-router` in v8; the v6/7 line still ships MEDIUM/HIGH
+   advisories like GHSA-qwww-vcr4-c8h2). If the generated lockfile triggers
+   Trivy findings, upgrade rather than suppress.
+4. **Python-in-CI column-0 rule:** any `python3 -c "..."` or heredoc body
+   embedded in a workflow `run: |` block must start at **column 0** of the
+   generated script (YAML keeps its indentation offset; Python and `<< EOF`
+   terminators reject it). Validate extracted scripts with `bash -n` and
+   `python -m py_compile`.
+5. **Frontend API URLs must be relative (nginx proxy):** never hardcode
+   `http://localhost:<port>` as the API base URL in frontend code. In the
+   deployed topology, nginx proxies `/api/*` to the backend — the frontend
+   calls `/api/quotes` not `http://localhost:5000/api/quotes`. Hardcoded
+   localhost URLs break in QA/PROD where the frontend and backend are on
+   different hosts. Use relative URLs (`/api/...`) for all fetch/Axios calls;
+   reserve `VITE_API_URL` / `NEXT_PUBLIC_API_URL` env vars only for local dev
+   overrides with `proxy` config in vite.config.ts or next.config.js. Verify
+   with `grep -r 'localhost:' apps/<appId>/src/` — no matches expected.
+   (Prevents QA deploy failures.)
+6. **TypeScript strict unused-locals in scaffold tsconfig:** enable
+   `"noUnusedLocals": true` and `"noUnusedParameters": true` in every
+   generated `tsconfig.json`. Unused imports (e.g. `useRef`, `useCallback`,
+   `useEffect` imported but not used) fail `tsc -b` in CI and block the
+   Docker build. The strict flags catch these at scaffold time instead of
+   CI time.
+7. **Library type-deps verification:** when scaffolding a frontend that uses
+   a component library with peer dependencies (react-leaflet, react-md,
+   etc.), ensure `@types/<peer-lib>` is in `devDependencies` when the peer
+   lib ships separate type packages. Missing type packages cause TS2322
+   (`Property 'x' does not exist on type`) at build time. Verify with
+   `npx tsc --noEmit` after scaffold, before handoff.
+
+### 6. Validate before handoff
+
+Run the stack's local quality gates on the scaffold:
+
+1. Build succeeds (`npm run build` / `dotnet build` / `mvn compile` / `go build` / ...).
+2. Tests pass (unit + integration + at least one architecture test).
+3. Dockerfiles build (`docker build`) when Docker is available, then `docker run`
+   and curl the health/DB endpoints (requirement 1 above).
+4. Manifests are valid (`kubectl apply --dry-run=client` / `kustomize build`).
+5. SCA is clean — run `trivy fs` inside the `sdd-e2e-ci:local` container (never install trivy
+   locally: `docker run --rm -v "$(pwd):/workspace" -w /workspace sdd-e2e-ci:local trivy fs --security-checks
+   vuln,secret,config .`), or use `npm audit` for JS-only stacks. Upgrades are documented when findings exist.
+
+Fix failures before reporting done. If a gate cannot run, document the reason
+and residual risk.
+
+### 7. Record and continue
+
+- Confirm the generated files list to the user.
+- Optionally record a durable knowledge note in `knowledge/` when a
+  non-obvious stack decision was made.
+- The next flow stage continues normally (no manual next-step question — the
+  process is deterministic).
+
+> **Scaffold shape lifecycle:** shapes in `.template/scaffold/` are starting
+> points only. When an app you materialized is registered in `apps.json` and
+> implemented, `dev-flow-implement-ticket` step 9.5 prunes the matching shape
+> (`environment-lab prune-scaffold`): `apps/service/` for service-kind apps,
+> `apps/job/` for job-kind apps, `db-bootstrap/` for the bootstrap job. Do not
+> regenerate a pruned shape — the real app is the reference.
+
+## Deliverables Checklist
+
+- [ ] `apps/<appId>/src/` structure per architecture skill for the stack
+- [ ] `apps/<appId>/test/` with **all 4 subfolders** created (authority level 5):
+  - [ ] `apps/<appId>/test/unit/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/integration/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/e2e/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/architecture/` — with a placeholder `.gitkeep` or initial test file
+- [ ] `playwright.config.ts` (or `cypress.config.ts`) with `BASE_URL` env var support for QA targeting
+- [ ] Build manifest(s) for the stack's native tooling
+- [ ] Test config + runner wiring (vitest/jest/pytest configured to read from `test/` folders)
+- [ ] Dockerfile(s) per app role (or documented skip)
+- [ ] CI workflow(s) using the stack's commands
+- [ ] k8s stack-specific artifacts (nginx.conf/.dockerignore) where applicable
+- [ ] All local quality gates green (or documented residual risk)
+
+**❌ HARD RULE (authority level 5):** The scaffold MUST create all 4 test subfolders. If the scaffold is skipped or the folders are missing when `dev-flow-implement-ticket` runs, implementation is blocked until the folders exist. Tests placed in `src/` instead of `test/` are a process violation.
+
+## Output
+
+Report the generated file list, the validation results of each local quality
+gate (build, tests, Dockerfiles, k8s manifests), any residual risk for gates
+that could not run, and the handoff point to the next delivery stage.
+
+## Failure Rules
+
+- Stop if the stack is unset, incomplete, or ambiguous — ask the user, do not guess.
+- Stop if a local quality gate fails; fix before reporting done.
+- Stop if the generated scaffold contradicts the selected stack or ticket scope.

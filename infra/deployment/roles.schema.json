@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sdd/roles.schema.json",
+  "title": "SDD lab role registry",    "description": "Role vocabulary and port ranges for the block-of-10 port-allocation scheme (ADR-0004). Tools/sdd_cli/k8s_ports.py reads this instead of hardcoding roles — consumers add roles (worker, scheduler, ...) here without touching Python. The shipped file defines the built-in web/api/database defaults; tools/sdd_cli/k8s_ports.py falls back to those defaults when the file is absent (bare checkout).",
+  "type": "object",
+  "required": ["version", "roles"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "roles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["hostPortBase", "nodePortOffset", "containerPort"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Human-readable purpose of the role (informational)."
+          },
+          "hostPortBase": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535,
+            "description": "Host-port block 0 start for the role's range (blocks of 10: base..base+9, base+10..base+19, ...). Host ports are host-scoped — dev/qa/prod consume consecutive slots (base, base+1, base+2). Shipped: web 8081, api 5002."
+          },
+          "nodePortOffset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 767,
+            "description": "NodePort offset added to env_code*1000 (dev 30, qa 31, prod 32) — blocks of 10 per env per role. Shipped: web 80 (dev 30080+), api 500 (dev 30500+). Must keep nodePorts under the K8s 32768 ceiling for every environment."
+          },
+          "containerPort": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Default container port for apps of this role when ports.json appPorts has no explicit entry (scaffold fallback). Shipped: web 80, api 5000, database 5432."
+          },
+          "portEnv": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, scaffold_k8s emits a stack-independent PORT env var in the app Deployment (the AI scaffold skill generates the Dockerfile that consumes it). Shipped: api only."
+          },
+          "healthCheck": {
+            "type": "string",
+            "enum": ["http", "tcp"],
+            "default": "http",
+            "description": "How the health probe checks services of this role: http (GET /health on the host port) or tcp (TCP connect to the host port — databases and other non-HTTP services). Shipped: web/api http, database tcp."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

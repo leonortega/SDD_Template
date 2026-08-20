@@ -1,24 +1,81 @@
 name: Package and deploy
 
 on:
-  push:
+  # Deploy ONLY when a pull request targeting `dev` is MERGED (closed event
+  # with merged=true). Direct pushes to dev never deploy: every change that
+  # reaches the dev branch must come through a PR merge.
+  pull_request:
+    types:
+      - closed
     branches:
       - dev
+  # Explicit operator override (e.g. QA/PROD promotion from a release branch).
   workflow_dispatch:
     inputs:
       environment:
         description: Target environment (dev, qa, or prod)
         required: true
         default: dev
+      artifact_commit_sha:
+        description: >-
+          QA-approved commit to deploy. For prod: PROD reuses the images pushed
+          by the DEV/QA pipeline for this commit (build is skipped). Defaults to
+          the dispatched ref's head commit.
+        required: false
+        default: ''
+      release_version:
+        description: Final release version recorded in release-prod.json (e.g. v1.2.3)
+        required: false
+        default: ''
+      source_rc_version:
+        description: Source RC tag recorded in release-prod.json (e.g. v1.2.3-rc.1)
+        required: false
+        default: ''
 
 jobs:
   build-and-deploy:
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    # Dispatch always runs. For pull_request events (already restricted to
+    # `closed` PRs targeting dev), only deploy when the PR was actually
+    # merged — a closed-without-merge PR must not deploy.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
       options: --user root --add-host host.docker.internal:host-gateway
     steps:
+      - name: Resolve deploy SHA
+        id: sha
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge event: deploy the MERGE COMMIT on the base branch (dev),
+            # not the PR head — GITHUB_SHA for pull_request events points at the
+            # head, which is not the commit that landed on dev.
+            MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+            if [ -n "${MERGE_SHA}" ]; then
+              echo "SHA=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            else
+              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # workflow_dispatch: deploy the dispatched ref's head commit —
+            # unless an explicit artifact_commit_sha is provided (PROD
+            # artifact-reuse), in which case that QA-approved commit wins.
+            DISPATCH_SHA="${{ github.event.inputs.artifact_commit_sha }}"
+            if [ -n "${DISPATCH_SHA}" ]; then
+              # RETRO-005: validate full SHA — short SHAs (7-12 chars) fail
+              # git fetch because depth-2 clone cannot resolve them.
+              if ! echo "${DISPATCH_SHA}" | grep -qE '^[0-9a-f]{40}$'; then
+                echo "ERROR: artifact_commit_sha must be a full 40-character SHA (got '${DISPATCH_SHA}' — ${#DISPATCH_SHA} chars)."
+                echo "Short SHAs fail checkout on shallow clones. Use: git rev-parse ${DISPATCH_SHA}"
+                exit 1
+              fi
+              echo "SHA=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+            else
+              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -30,24 +87,216 @@ jobs:
           repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
           git init .
           git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
+          # Depth 2 so the deployable-changes gate can resolve the deploy
+          # commit's first parent (pre-merge base) for the change-set diff —
+          # used for both PR-merge and workflow_dispatch runs.
+          git fetch --depth 2 origin "${{ steps.sha.outputs.SHA }}"
           git checkout --force FETCH_HEAD
 
       - name: Determine environment
         id: env
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge into dev: deploy to DEV.
             echo "ENV=dev" >> $GITHUB_OUTPUT
           else
             echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine target environments
+        id: targets
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # On PR merge into dev: deploy to DEV ONLY. QA is NOT auto-promoted:
+            # the agent verifies DEV, asks the user for approval, then re-dispatches
+            # this workflow with environment=qa (workflow_dispatch).
+            echo "TARGETS=dev" >> $GITHUB_OUTPUT
+          else
+            # On workflow_dispatch (user-approved QA / explicit PROD promotion):
+            # deploy only to the specified environment
+            echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for deployable changes (src/, test/, or Dockerfiles)
+        # Deploy in ANY environment only when the change set touches a src/ or
+        # test/ folder at any depth (e.g. apps/<appId>/src/...), an app's
+        # Dockerfile (apps/<appId>/Dockerfile - the image content depends on
+        # it), or a packages/<pkg>/** path whose package an app declares in
+        # apps.json `dependsOn` (shared-code change -> rebuild the dependent
+        # apps). Docs, infra, and workflow-only changes must not
+        # deploy. Note: only folder-based matches count — co-located test files
+        # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
+        # fails open when the base commit cannot be resolved or the diff cannot
+        # be computed (no way to prove the change is doc-only, so do not block
+        # deploys).
+        #
+        # Outputs (ADR-0002 app-aware build):
+        # - DEPLOYABLE=true/false — whether any app must be rebuilt+redeployed.
+        # - AFFECTED_APPS — comma-separated appIds to build/deploy on filtered
+        #   runs; "ALL" for unconditional runs (pinned dispatch / fails-open) so
+        #   every app is built; empty when deployable but no app resolves.
+        #
+        # EXCEPTION (operator override): a workflow_dispatch that supplies an
+        # explicit artifact_commit_sha pins a specific verified commit to deploy
+        # (QA approval / PROD promotion) and is UNCONDITIONALLY deployable — the
+        # src/test diff gate does not apply even when the pinned commit's own
+        # delta is infra-only (e.g. a kustomize overlay fix). PR-merge
+        # auto-deploys and ref-head dispatches (no pin) keep the strict gate.
+        id: changes
+        shell: bash
+        env:
+          # Gitea renders the input expression ONCE into this env var; the bash
+          # script then reads the plain variable. Avoids inline ${{ }} context-
+          # expression edge cases inside the shell test. Always set (possibly
+          # empty), so ${PINNED_SHA} is safe under `set -u`.
+          PINNED_SHA: ${{ github.event.inputs.artifact_commit_sha }}
+        run: |
+          set -euo pipefail
+          DEPLOY_SHA="${{ steps.sha.outputs.SHA }}"
+
+          # Explicit artifact_commit_sha dispatch = operator override: deploy
+          # the pinned verified commit unconditionally (no src/test diff gate).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${PINNED_SHA}" ]; then
+            echo "Pinned artifact dispatch (artifact_commit_sha) — treating change as deployable."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Base for the change-set diff: the deploy commit's FIRST PARENT.
+          # For a merged-PR event, pull_request.base.sha points at the base
+          # branch head AFTER the merge — i.e. the merge commit itself — so
+          # base..merge would be empty and every deploy would be skipped. The
+          # first parent is the pre-merge dev head (PR merge) / the dispatched
+          # commit's parent (workflow_dispatch); the depth-2 checkout made it
+          # available in both cases.
+          BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+
+          if [ -z "${BASE_SHA}" ]; then
+            echo "No base commit available — treating change as deployable."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # git diff exits 0 (no differences), 1 (differences found), or >=128
+          # (error). A diff error must fail OPEN — the gate is advisory and must
+          # never silently block a real deploy because the diff hiccuped.
+          CHANGED=$(git diff --name-only "${BASE_SHA}" "${DEPLOY_SHA}" 2>/tmp/diff-err.log) || DIFF_STATUS=$?
+          DIFF_STATUS="${DIFF_STATUS:-0}"
+          if [ "${DIFF_STATUS}" -gt 1 ]; then
+            echo "WARNING: git diff failed (status ${DIFF_STATUS}) — treating change as deployable."
+            cat /tmp/diff-err.log >&2
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${CHANGED}" ]; then
+            echo "No changed files between ${BASE_SHA} and ${DEPLOY_SHA} — skipping deploy."
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "${CHANGED}" | sed 's/^/  - /'
+
+          # App-aware mapping (ADR-0002): resolve the change set to the affected
+          # appIds. apps/<appId>/src|test paths map to that app; a
+          # packages/<pkg>/** change maps to every app that declares the package
+          # in apps.json `dependsOn` (shared code -> rebuild dependents). The
+          # block writes AFFECTED_APPS (comma-separated; empty when no app
+          # resolves) and PACKAGES_DEPLOYABLE into $GITHUB_OUTPUT.
+          export CHANGED_LIST="${CHANGED}"
+          python3 << 'PYEOF'
+          import json, os, re
+
+          changed = os.environ.get("CHANGED_LIST", "").splitlines()
+          apps = []
+          try:
+              with open("infra/deployment/apps.json", encoding="utf-8") as f:
+                  apps = json.load(f).get("apps", [])
+          except (OSError, ValueError):
+              print("WARNING: infra/deployment/apps.json missing or invalid - packages changes have no known dependents")
+          apps_by_id = {a["appId"]: a for a in apps}
+          affected = []
+          packages_deployable = False
+          deployable = False
+          for path in changed:
+              path = path.strip()
+              if not path:
+                  continue
+              m = re.match(r"^apps/([^/]+)/(src|test)/", path)
+              if m:
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  deployable = True
+                  continue
+              m = re.match(r"^apps/([^/]+)/Dockerfile$", path)
+              if m:
+                  # The image content depends on its Dockerfile - rebuild and
+                  # redeploy the app even without src/test changes.
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  deployable = True
+                  continue
+              m = re.match(r"^packages/([^/]+)/", path)
+              if m:
+                  pkg = m.group(1)
+                  for app_id, app in apps_by_id.items():
+                      if pkg in (app.get("dependsOn") or []):
+                          # Deployable whenever a dependent exists, even if it
+                          # was already in `affected` via a src/test change.
+                          packages_deployable = True
+                          if app_id not in affected:
+                              affected.append(app_id)
+          affected.sort()
+          affected_csv = ",".join(affected)
+          print(f"Affected apps from change set: {affected_csv or '(none)'}")
+          print(f"Packages with dependents in change set: {'yes' if packages_deployable else 'no'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"AFFECTED_APPS={affected_csv}\n")
+              out.write(f"PACKAGES_DEPLOYABLE={'true' if packages_deployable else 'false'}\n")
+              # A src/test change, an app Dockerfile, or a packages change with
+              # dependents makes the change deployable (packages without
+              # dependents must not deploy).
+              out.write(f"DEPLOYABLE={'true' if (deployable or packages_deployable) else 'false'}\n")
+          PYEOF
+          # tr -d '\r': python's text-mode append writes CRLF on Windows checkouts
+          # of the gate script; CI is Linux, but the read-back must be robust.
+          PACKAGES_DEPLOYABLE=$(sed -n 's/^PACKAGES_DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          PACKAGES_DEPLOYABLE="${PACKAGES_DEPLOYABLE:-false}"
+          DEPLOYABLE=$(sed -n 's/^DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          DEPLOYABLE="${DEPLOYABLE:-false}"
+
+          # DEPLOYABLE is computed in the python gate above: src/test paths,
+          # app Dockerfiles (apps/<appId>/Dockerfile), or packages changes
+          # with dependents. Docs/infra/workflow-only changes yield false and
+          # skip the build+deploy steps.
+          if [ "${DEPLOYABLE}" = "true" ]; then
+            echo "Deployable changes found (src/test, Dockerfile, or packages dependents)."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No deployable changes (no src/test, Dockerfile, or package-dependent changes) - skipping deploy."
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push Docker images
+        # PROD skips the build entirely: it reuses the QA-approved images pushed
+        # by the DEV/QA pipeline for the pinned artifact commit (never rebuild or
+        # republish during PROD promotion).
+        #
+        # App-aware (ADR-0002): on PR-merge auto-deploys only the apps resolved
+        # by the gate's AFFECTED_APPS output are built; packages/** changes map
+        # to their dependent apps. Unconditional dispatch / fails-open runs pass
+        # AFFECTED_APPS=ALL -> every app is built (pre-filter behavior).
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -63,41 +312,124 @@ jobs:
             echo "WARNING: Registry ${REGISTRY} not reachable via HTTP — will skip push"
           fi
 
-          # Login to Nexus Docker registry (non-fatal if registry is HTTP-only and insecure-registries not set)
+          # Docker daemons default to HTTPS for registries; the Nexus :5001
+          # registry is HTTP-only. `localhost`/127.0.0.1 are Docker's implicit
+          # insecure (HTTP) registries, so for local-lab registries log in
+          # against the localhost retag - logging in against
+          # host.docker.internal:5001 attempts HTTPS and fails. Matches the
+          # PUSH_HOST logic below. Non-fatal here; the fail-closed manifest
+          # check below makes a skipped push fatal when the registry is
+          # reachable.
+          LOGIN_HOST="${REGISTRY}"
+          case "${REGISTRY%%:*}" in
+            localhost|127.0.0.1|host.docker.internal)
+              LOGIN_HOST="localhost:${REGISTRY##*:}"
+              ;;
+          esac
           LOGGED_IN=false
           if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
-            if echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
+            if echo "${NEXUS_PASSWORD}" | docker login "${LOGIN_HOST}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
               LOGGED_IN=true
-              echo "Docker login successful"
+              echo "Docker login successful (${LOGIN_HOST})"
             else
-              echo "WARNING: Docker login failed (HTTPS fallback) — will skip push"
+              echo "WARNING: Docker login failed - will skip push"
             fi
           fi
 
-          # Read apps from apps.json
-          APPS=$(python3 -c "
-          import json
+          # Read apps from apps.json, filtered to the gate's affected app set
+          # (ADR-0002). AFFECTED_APPS is empty only when apps.json has no
+          # matching app — the loop below then runs zero times and nothing is
+          # built (the pipeline stays green with nothing to do).
+          if [ -n "${AFFECTED_APPS:-}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
+            echo "Build set (affected apps): ${AFFECTED_APPS}"
+          elif [ "${AFFECTED_APPS:-}" = "ALL" ]; then
+            echo "Build set: ALL apps (unconditional dispatch)"
+          else
+            echo "Build set: none (no affected app resolved - nothing to build)"
+          fi
+          # Resolve the build set: the affected apps, PLUS every job app
+          # (kind: job - db-bootstrap). Job apps always build: the Jobs phase
+          # pins their image to COMMIT_SHA unconditionally (ADR-0003 bootstrap
+          # runs before every rollout), so a job skipped here would reference an
+          # image that was never built/pushed/loaded -> ImagePullBackOff
+          # (observed: PR-20 deploy, db-bootstrap:37104d96e5). This block is
+          # exec-tested by tools/sdd_cli/tests/test_deployable_gate.py.
+          export AFFECTED_APPS_RAW="${AFFECTED_APPS:-}"
+          APPS=$(python3 << 'PYEOF'
+          import json, os
+          affected_raw = os.environ.get('AFFECTED_APPS_RAW', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open('infra/deployment/apps.json') as f:
               apps = json.load(f).get('apps', [])
           for a in apps:
-              print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
-          " 2>/dev/null || echo "frontend|frontend")
+              # Job apps (kind: job) are ALWAYS built, even when unaffected: the
+              # Jobs phase pins their image to COMMIT_SHA and kind cannot pull
+              # from the HTTP-only registry, so the image must exist in kind
+              # from this build.
+              # Same semantics as the Jobs-phase pin loop: an app is a job
+              # when its kind is 'job' (default 'service' when unset).
+              if affected is not None and a['appId'] not in affected and a.get('kind', 'service') != 'job':
+                  continue
+              print(f"{a['appId']}|{a.get('projectPath', a['appId'])}")
+          PYEOF
+          ) || true
 
           echo "${APPS}" | while IFS='|' read -r app_id project_path; do
             if [ -f "${project_path}/Dockerfile" ]; then
               IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
               echo "Building ${app_id}..."
-              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" "${project_path}"
+              # Build context is the REPO ROOT so apps/package.json file: deps
+              # (packages/<pkg>) resolve inside the image (ADR-0002 packages/).
+              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" .
               echo "${app_id} built successfully"
 
               if [ "$LOGGED_IN" = "true" ] && [ "$REGISTRY_REACHABLE" = "true" ]; then
                 echo "Pushing ${IMAGE}..."
-                docker push "${IMAGE}"
-                docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
-                docker push "${REGISTRY}/${app_id}:latest"
+                # Docker daemons default to HTTPS for registries; the Nexus
+                # :5001 registry is HTTP-only. `localhost` is Docker's implicit
+                # insecure (HTTP) registry, so for local-lab registries push a
+                # localhost retag — pushing host.docker.internal:5001 attempts
+                # HTTPS and fails. Customized remote registries push directly.
+                # The registry stores repo:tag by name (host-independent), so
+                # the PROD gate's host.docker.internal manifest check finds it.
+                case "${REGISTRY%%:*}" in
+                  localhost|127.0.0.1|host.docker.internal)
+                    PUSH_HOST="localhost:${REGISTRY##*:}"
+                    ;;
+                  *)
+                    PUSH_HOST="${REGISTRY}"
+                    ;;
+                esac
+                PUSH_TAG="${PUSH_HOST}/${app_id}:${COMMIT_SHA}"
+                docker tag "${IMAGE}" "${PUSH_TAG}"
+                docker push "${PUSH_TAG}"
+                docker tag "${IMAGE}" "${PUSH_HOST}/${app_id}:latest"
+                docker push "${PUSH_HOST}/${app_id}:latest"
                 echo "${app_id} pushed to registry"
               else
                 echo "Skipping push for ${app_id} (registry not available)"
+              fi
+
+              # Fail-closed registry verification: a green "build + push" does NOT
+              # guarantee persistence — a login/HTTPS failure above silently skips
+              # the push, and the PROD artifact gate checks the registry, not local
+              # state. Verify the manifest exists when the registry is reachable.
+              if [ "$REGISTRY_REACHABLE" = "true" ]; then
+                if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
+                  MANIFEST_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+                    -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    "http://${REGISTRY}/v2/${app_id}/manifests/${COMMIT_SHA}")
+                else
+                  MANIFEST_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    "http://${REGISTRY}/v2/${app_id}/manifests/${COMMIT_SHA}")
+                fi
+                if [ "$MANIFEST_CODE" != "200" ]; then
+                  echo "ERROR: ${REGISTRY}/${app_id}:${COMMIT_SHA} missing from registry (HTTP ${MANIFEST_CODE}) — push failed or was skipped"
+                  exit 1
+                fi
+                echo "${app_id} verified in registry (manifest HTTP 200)"
               fi
 
               # Load image into kind cluster so K8s can find it (kind's containerd
@@ -110,125 +442,601 @@ jobs:
             fi
           done
 
-      - name: Deploy to K8s
+      - name: Validate NodePort uniqueness across target overlays
+        # Always runs (not gated on deployable changes): this is a static
+        # cross-check of committed files only, and ports.json edits live under
+        # infra/ — a change that touches ports but no src/test code would
+        # otherwise skip the check entirely and drift silently.
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Canonical source of truth: infra/deployment/ports.json. The per-env
+          # service patches are generated from it (tools/sdd_cli/k8s_ports.py),
+          # so this step cross-checks patches vs. the canonical file AND
+          # enforces nodePort uniqueness (cluster-scoped).
+          python3 << 'PYEOF'
+          import json, re, sys
+          from pathlib import Path
+
+          # 1. Load canonical ports.json
+          with open('infra/deployment/ports.json') as f:
+              canonical = json.load(f)
+
+          # 2. Parse nodePorts from committed service patches
+          node_port_pattern = re.compile(r'^\s*nodePort:\s*(\d+)')
+          overlay_dirs = [d for d in Path('infra/k8s/overlays').iterdir() if d.is_dir()]
+          patch_ports = {}  # (env, app) -> port
+          for overlay_dir in sorted(overlay_dirs):
+              env_name = overlay_dir.name
+              patch_file = overlay_dir / 'service-patch.yaml'
+              if not patch_file.exists():
+                  continue
+              current_service = None
+              for line in patch_file.read_text().split('\n'):
+                  m_name = re.match(r'^  name:\s*(\S+)', line)
+                  if m_name:
+                      current_service = m_name.group(1)
+                  m_port = node_port_pattern.search(line)
+                  if m_port:
+                      patch_ports[(env_name, current_service or 'unknown')] = int(m_port.group(1))
+
+          # 3. Cross-check: every canonical mapping must be present in the patches.
+          # Patches are keyed by the Service name they target: the canonical app
+          # key, or its serviceName override (infra services like the shared
+          # database register as `database` but expose `db` - matches
+          # k8s_ports.service_patch_yaml).
+          for env, apps in canonical.get('environments', {}).items():
+              for app, cfg in apps.items():
+                  expected = cfg['nodePort']
+                  service = cfg.get('serviceName', app)
+                  actual = patch_ports.get((env, service))
+                  if actual != expected:
+                      print(f'DRIFT: {env}/{app} patch({service}) nodePort={actual}, '
+                            f'ports.json says {expected} (run k8s_ports.write_artifacts)')
+                      sys.exit(1)
+
+          # 4. Enforce cluster-wide uniqueness across all environments
+          all_ports = {}
+          for (env, svc), port in sorted(patch_ports.items()):
+              if port in all_ports:
+                  existing = all_ports[port]
+                  print(f'COLLISION: NodePort {port} used by {existing[0]}/{existing[1]}'
+                        f' and {env}/{svc}')
+                  sys.exit(1)
+              all_ports[port] = (env, svc)
+
+          print('NodePort validation passed (matches ports.json):')
+          for port, (env, svc) in sorted(all_ports.items()):
+              print(f'  {port} -> {env}/{svc}')
+          PYEOF
+
+      - name: Verify PROD artifact (reuse QA-approved images)
+        # PROD must reuse the QA-approved artifact: the DEV/QA pipeline for the
+        # pinned commit must have uploaded container-images.json to Nexus, and
+        # every image tag must exist in the registry (otherwise PROD pods would
+        # ImagePullBackOff). Fails loudly instead of deploying unverified images.
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV == 'prod'
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export COMMIT_SHA=$(git rev-parse HEAD)
+          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          MANIFEST_PATH="app/${COMMIT_SHA}/container-images.json"
+
+          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+            echo "ERROR: PROD deployment requires NEXUS_USERNAME/NEXUS_PASSWORD to verify the QA-approved artifact."
+            exit 1
+          fi
+
+          echo "Fetching ${MANIFEST_PATH} from Nexus..."
+          curl -s -f --connect-timeout 5 --max-time 30 \
+            -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+            "${NEXUS_URL}/repository/${REPO}/${MANIFEST_PATH}" -o /tmp/container-images.json || {
+              echo "ERROR: ${MANIFEST_PATH} not found in Nexus for commit ${COMMIT_SHA}."
+              echo "PROD reuses the QA-approved artifact — run the DEV/QA pipeline for this commit first."
+              exit 1
+            }
+
+          python3 << 'PYEOF'
+          import json, os, sys
+
+          with open('/tmp/container-images.json') as f:
+              manifest = json.load(f)
+
+          commit_sha = os.environ['COMMIT_SHA']
+          if manifest.get('commitSha') != commit_sha:
+              print(f"ERROR: container-images.json commitSha {manifest.get('commitSha')!r} != {commit_sha!r}")
+              sys.exit(1)
+
+          images = manifest.get('apps', [])
+          if not images:
+              print("ERROR: container-images.json lists no apps to deploy")
+              sys.exit(1)
+
+          print(f"Verified QA-approved manifest for {commit_sha}:")
+          for app in images:
+              print(f"  {app.get('image')}")
+          with open('/tmp/prod-images.txt', 'w') as f:
+              for app in images:
+                  f.write(app.get('image', '') + '\n')
+          PYEOF
+
+          # Verify every image tag exists in the registry.
+          while IFS= read -r image; do
+            [ -z "${image}" ] && continue
+            repo_path="${image%:*}"
+            repo_path="${repo_path#*/}"
+            tag="${image##*:}"
+            url="http://${REGISTRY}/v2/${repo_path}/manifests/${tag}"
+            if curl -s -f --connect-timeout 5 --max-time 15 \
+                -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                "${url}" >/dev/null 2>&1; then
+              echo "  OK: ${image} exists in registry"
+            else
+              echo "ERROR: ${image} not found in registry ${REGISTRY} (run the DEV/QA pipeline for ${COMMIT_SHA} first)"
+              exit 1
+            fi
+          done < /tmp/prod-images.txt
+          echo "PROD artifact verification passed."
+
+      - name: Deploy to K8s (phased apply, all targets)
+        # App-aware (ADR-0002) + phase-gated (ADR-0003): only the gate's
+        # AFFECTED_APPS service apps get their image tag set, are deleted,
+        # applied, and rollout-waited. Unaffected service apps keep their
+        # running state untouched. Job apps (kind: job — db-bootstrap,
+        # migration jobs) are always applied and waited-for-complete BEFORE any
+        # Deployment rollout; a failed Job fails the deploy. AFFECTED_APPS=ALL
+        # (unconditional dispatch / fails-open) keeps the pre-filter all-apps
+        # behavior.
+        if: steps.changes.outputs.deployable == 'true'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
 
-          # Write kubeconfig from secret to temp file (secret stores content, KUBECONFIG needs a path)
-          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
-            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+          # Generate kubeconfig from kind at runtime.
+          # Kind TLS cert only covers localhost/sdd-cluster-control-plane,
+          # not host.docker.internal — so we skip TLS verify.
+          if command -v kind &>/dev/null; then
+            kind get kubeconfig --name sdd-cluster 2>/dev/null > /tmp/kubeconfig-raw.yaml
+            python3 -c "
+          import yaml
+          with open('/tmp/kubeconfig-raw.yaml') as f:
+              cfg = yaml.safe_load(f)
+          for cluster in cfg.get('clusters', []):
+              cl = cluster.get('cluster', {})
+              cl['server'] = cl.get('server','').replace('127.0.0.1', 'host.docker.internal')
+              cl.pop('certificate-authority-data', None)
+              cl.pop('certificate-authority', None)
+              cl['insecure-skip-tls-verify'] = True
+          with open('/tmp/kubeconfig', 'w') as f:
+              yaml.dump(cfg, f, default_flow_style=False)
+          print('CI kubeconfig written (host.docker.internal, TLS skip)')
+          "
             chmod 600 /tmp/kubeconfig
             export KUBECONFIG=/tmp/kubeconfig
-            echo "KUBECONFIG written to /tmp/kubeconfig"
+          elif [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            echo "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            chmod 600 /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
           else
-            echo "WARNING: KUBECONFIG secret not set — kubectl may fail to authenticate"
+            echo "WARNING: No kind CLI and no KUBECONFIG secret — kubectl will fail"
           fi
 
-          ENV="${{ steps.env.outputs.ENV }}"
           REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
           COMMIT_SHA=$(git rev-parse HEAD)
-
-          OVERLAY_DIR="infra/k8s/overlays/${ENV}"
-
-          if [ ! -d "${OVERLAY_DIR}" ]; then
-            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
-            echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
-            exit 0
-          fi
-
-          # Ensure K8s namespace exists
-          NAMESPACE="sdd-${ENV}"
-          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
-            echo "Creating namespace ${NAMESPACE}..."
-            kubectl create namespace "${NAMESPACE}"
-          fi
-
-          # Diagnostics: tool versions and connectivity
-          echo "=== K8s Deploy Diagnostics ==="
-          echo "kustomize: $(kustomize version 2>&1)"
-          echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
-          echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
-          echo "Environment: ${ENV}"
-          echo "Namespace: ${NAMESPACE}"
-          echo "Overlay: ${OVERLAY_DIR}"
-          echo "============================"
-
-          # Read apps and set image tags
           REPO_ROOT=$(pwd)
           APPS_JSON="${REPO_ROOT}/infra/deployment/apps.json"
 
-          cd "${OVERLAY_DIR}"
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo ""
+            echo "=== Deploying to ${ENV} ==="
+
+            OVERLAY_DIR="infra/k8s/overlays/${ENV}"
+
+            if [ ! -d "${OVERLAY_DIR}" ]; then
+              echo "No K8s overlay found for ${ENV} — skipping"
+              continue
+            fi
+
+            # Ensure K8s namespace exists
+            NAMESPACE="sdd-${ENV}"
+            if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+              echo "Creating namespace ${NAMESPACE}..."
+              kubectl create namespace "${NAMESPACE}"
+            fi
+
+            # Diagnostics: tool versions and connectivity
+            echo "=== K8s Deploy Diagnostics (${ENV}) ==="
+            echo "kustomize: $(kustomize version 2>&1)"
+            echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
+            echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
+            echo "Environment: ${ENV}"
+            echo "Namespace: ${NAMESPACE}"
+            echo "Overlay: ${OVERLAY_DIR}"
+            echo "================================"
+
+            # Read apps and set image tags for kind=service apps. Only these
+            # carry an image in the Deployment manifests — job apps are tagged
+            # via `kubectl set image` on the phase file before apply (below).
+            cd "${OVERLAY_DIR}"
 
           python3 -c "
-          import json, subprocess, os
+          import json, os, subprocess
+          apps_json = '${APPS_JSON}'
+          registry = '${REGISTRY}'
+          commit_sha = '${COMMIT_SHA}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
+              if affected is not None and app_id not in affected:
+                  continue
+              image = f'{registry}/{app_id}:{commit_sha}'
+              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
+              print(f'Set image for {app_id}: {image}')
+          "
+
+            # Build manifest to temp file
+            echo "Building K8s manifest..."
+            kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
+            if [ ! -s /tmp/k8s-manifest.yaml ]; then
+              echo "ERROR: kustomize build produced empty output"
+              cat /tmp/kustomize-err.log
+              exit 1
+            fi
+            echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
+
+            # App-aware manifest filter (ADR-0002) + phase split (ADR-0003):
+            # on filtered runs, drop the resources of unaffected SERVICE apps
+            # so kubectl apply never re-touches them (their image tags are
+            # still :latest from the committed overlay — applying them would
+            # trigger an unwanted rollout). AFFECTED_APPS=ALL applies
+            # everything unchanged. Outputs are split into THREE files:
+            #   /tmp/k8s-infra.yaml       — shared infra (the database engine:
+            #     StatefulSet, PVC, db Service — labelled
+            #     app.kubernetes.io/component: database). Applied FIRST so the
+            #     bootstrap Job can connect to a running engine on a fresh
+            #     namespace (ADR-0003). Always kept when present.
+            #   /tmp/k8s-jobs.yaml        — kind: Job resources (wait-for-
+            #     completion phases: db-bootstrap, per-app migration jobs).
+            #     Jobs are ALWAYS kept when present, regardless of the affected
+            #     set: migrations must run before any rollout in this env.
+            #   /tmp/k8s-deployments.yaml — everything else (Deployments,
+            #     Services, StatefulSets, PVCs) filtered by affected apps.
+            APPLY_SKIPPED=false
+            if [ -n "${AFFECTED_APPS}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
+              echo "Filtering manifest to affected apps: ${AFFECTED_APPS}"
+              python3 << 'PYEOF'
+          import os, re
+          affected = {a for a in os.environ.get("AFFECTED_APPS", "").split(",") if a}
+          raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
+          docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
+          kept_jobs, kept_infra, kept_deployments, skipped = [], [], [], []
+          for doc in docs:
+              kind_m = re.search(r"^kind:\s*(\S+)", doc, flags=re.M)
+              doc_kind = kind_m.group(1) if kind_m else ""
+              name_m = re.search(r"^  name:\s*(\S+)", doc, flags=re.M)
+              name = name_m.group(1) if name_m else ""
+              if doc_kind == "Job":
+                  # Migration/bootstrap jobs always run (ADR-0003 ordering).
+                  kept_jobs.append(doc)
+              elif re.search(r"app\.kubernetes\.io/component:\s*database", doc):
+                  # Shared infra (database engine) must exist before the
+                  # bootstrap Job can connect - always applied, ahead of Jobs.
+                  kept_infra.append(doc)
+              elif name in affected:
+                  kept_deployments.append(doc)
+              else:
+                  skipped.append(name)
+          # Always rewrite all three files: when nothing is kept they must be
+          # TRUNCATED, or the APPLY_SKIPPED guard below would apply the stale
+          # full manifest (with :latest tags) instead of skipping.
+          with open("/tmp/k8s-infra.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_infra) + ("\n" if kept_infra else ""))
+          with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_jobs) + ("\n" if kept_jobs else ""))
+          with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_deployments) + ("\n" if kept_deployments else ""))
+          kept = len(kept_jobs) + len(kept_infra) + len(kept_deployments)
+          if kept:
+              print(f"Filtered manifest: kept {len(kept_deployments)} deployment/resource(s) + {len(kept_jobs)} job(s) + {len(kept_infra)} infra resource(s), dropped {len(skipped)} unaffected resource(s).")
+          else:
+              print(f"No affected resources found (dropped {len(skipped)}) - manifests truncated: nothing to apply for this run.")
+          PYEOF
+              if [ ! -s /tmp/k8s-jobs.yaml ] && [ ! -s /tmp/k8s-deployments.yaml ] && [ ! -s /tmp/k8s-infra.yaml ]; then
+                echo "No affected resources to apply - skipping kubectl apply."
+                APPLY_SKIPPED=true
+              fi
+            else
+              # Unfiltered (ALL / no affected filter): split the full render.
+              python3 << 'PYEOF'
+          import re
+          raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
+          docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
+          jobs = [d for d in docs if re.search(r"^kind:\s*Job\s*$", d, flags=re.M)]
+          infra = [d for d in docs if re.search(r"app\.kubernetes\.io/component:\s*database", d)]
+          others = [d for d in docs if d not in jobs and d not in infra]
+          with open("/tmp/k8s-infra.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(infra) + ("\n" if infra else ""))
+          with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(jobs) + ("\n" if jobs else ""))
+          with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(others) + ("\n" if others else ""))
+          PYEOF
+            fi
+
+            # Delete existing deployments to avoid "field is immutable" errors
+            # when spec.selector.matchLabels changes (e.g. commonLabels→labels
+            # migration). Services are NOT deleted — their selectors are
+            # mutable. Job apps have no Deployment; they are recreated fresh.
+            echo "Removing existing service-app deployments for clean apply..."
+          python3 << PYEOF
+          import json, os, subprocess
+          apps_json = '${APPS_JSON}'
+          namespace = '${NAMESPACE}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
+              if affected is not None and app_id not in affected:
+                  continue
+              subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
+          PYEOF
+
+          # ── Phase 0: shared infra (database engine) — apply & wait ready ──
+          # The shared database (StatefulSet + PVC + db Service) must
+          # exist BEFORE the db-bootstrap Job can connect (ADR-0003: bootstrap
+          # creates the logical role/db against the running engine). It ships in
+          # the overlay's shared/database kustomization, so it is part of the
+          # rendered manifest and must be applied first — on a fresh namespace
+          # the Job would otherwise wait for a database that does not exist.
+          if [ -s /tmp/k8s-infra.yaml ]; then
+            echo "Applying shared infra (database) to ${ENV}..."
+            if ! kubectl apply -f /tmp/k8s-infra.yaml 2>&1; then
+              echo "ERROR: kubectl apply failed for shared infra - running dry-run for diagnosis..."
+              kubectl apply --dry-run=client -f /tmp/k8s-infra.yaml 2>&1 | head -20
+              exit 1
+            fi
+            echo "Waiting for database rollout (${ENV})..."
+            kubectl -n "sdd-${ENV}" rollout status statefulset/database --timeout=180s
+          fi
+
+          # ── Phase 1: Jobs (bootstrap + migrations) — apply & wait ────────
+          # ADR-0003: Job apps run BEFORE any Deployment rollout. A failed
+          # Job fails the deploy here — rollouts never start.
+          if [ -s /tmp/k8s-jobs.yaml ]; then
+              # Pin every registered job app's image to the deploy commit — the
+              # env overlay images: section only lists service apps, so the
+              # Job manifests would otherwise keep the committed :latest tag
+              # (and PROD would run migrations at :latest, not the pinned
+              # QA-approved artifact).
+              python3 << PYEOF
+          import json, os, subprocess, sys
+          namespace = '${NAMESPACE}'
           apps_json = '${APPS_JSON}'
           registry = '${REGISTRY}'
           commit_sha = '${COMMIT_SHA}'
           with open(apps_json) as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
+              if app.get('kind', 'service') != 'job':
+                  continue
               app_id = app['appId']
               image = f'{registry}/{app_id}:{commit_sha}'
-              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
-              print(f'Set image for {app_id}: {image}')
-          "
+              tag = subprocess.run(
+                  ['kubectl', '-n', namespace, 'set', 'image', '-f', '/tmp/k8s-jobs.yaml',
+                   f'{app_id}={image}', '--local', '-o', 'yaml'],
+                  capture_output=True, text=True
+              )
+              if tag.returncode != 0:
+                  print(f'ERROR: could not tag Job image for {app_id}: {tag.stderr}')
+                  sys.exit(1)
+              with open('/tmp/k8s-jobs.yaml', 'w', encoding='utf-8') as f:
+                  f.write(tag.stdout)
+              print(f'Pinned Job image for {app_id}: {image}')
+          PYEOF
 
-          # Build manifest to temp file
-          echo "Building K8s manifest..."
-          kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
-          if [ ! -s /tmp/k8s-manifest.yaml ]; then
-            echo "ERROR: kustomize build produced empty output"
-            cat /tmp/kustomize-err.log
-            exit 1
-          fi
-          echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
-
-          # Delete existing apps to avoid "field is immutable" errors when K8s
-          # resources change their selector/matchLabels (e.g. commonLabels→labels).
-          # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
-          echo "Removing existing apps for clean apply..."
-          # Delete existing deployments to avoid "field is immutable" errors when
-          # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
-          # Services are NOT deleted — their selectors are mutable.
-          python3 << PYEOF
-          import json, subprocess
-          apps_json = '${APPS_JSON}'
+              # Job pod templates are immutable: a Job created by a previous
+              # deploy cannot be re-applied with a new image ("field is
+              # immutable"). Delete existing Jobs by name (ignore-not-found),
+              # then apply fresh so bootstrap/migration jobs re-run per deploy.
+              python3 << PYEOF
+          import re, subprocess, sys
           namespace = '${NAMESPACE}'
+          jobs_raw = open('/tmp/k8s-jobs.yaml', encoding='utf-8').read()
+          names = re.findall(r'^  name:\s*(\S+)', jobs_raw, flags=re.M)
+          for name in names:
+              print(f'Removing existing Job {name} (immutable spec) ...')
+              r = subprocess.run(
+                  ['kubectl', '-n', namespace, 'delete', 'job', name, '--ignore-not-found'],
+                  capture_output=True, text=True)
+              if r.returncode != 0:
+                  print(f'ERROR: could not delete Job {name}: {r.stderr.strip()}')
+                  sys.exit(1)
+          PYEOF
+
+              echo "Applying Job phase (${ENV})..."
+              if ! kubectl apply -f /tmp/k8s-jobs.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed for jobs - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-jobs.yaml 2>&1 | head -20
+                exit 1
+              fi
+              echo "Waiting for Jobs to complete (${ENV})..."
+              # Wait ONLY on job resources actually present in the applied
+              # phase file — a registered-but-unrendered job app (missing
+              # overlay resources entry) must not fail the wait with a
+              # misleading error.
+              python3 << PYEOF
+          import json, os, re, subprocess, sys
+          namespace = '${NAMESPACE}'
+          apps_json = '${APPS_JSON}'
+          jobs_raw = open('/tmp/k8s-jobs.yaml', encoding='utf-8').read()
+          applied_jobs = set(re.findall(r'^  name:\s*(\S+)', jobs_raw, flags=re.M))
           with open(apps_json) as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
+              if app.get('kind', 'service') != 'job':
+                  continue
               app_id = app['appId']
-              subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
+              if app_id not in applied_jobs:
+                  print(f'INFO: Job {app_id} registered but not in this env overlay - skipping wait')
+                  continue
+              print(f'Waiting for Job {app_id} in {namespace}...')
+              wait = subprocess.run(
+                  ['kubectl', '-n', namespace, 'wait', '--for=condition=complete',
+                   '--timeout=300s', f'job/{app_id}'],
+                  capture_output=True, text=True
+              )
+              if wait.returncode != 0:
+                  # A Job can complete or fail; the failure case must fail the deploy.
+                  status = subprocess.run(
+                      ['kubectl', '-n', namespace, 'get', 'job', app_id, '-o', 'jsonpath={.status}'],
+                      capture_output=True, text=True
+                  )
+                  print(f'ERROR: Job {app_id} did not complete: {status.stdout} {wait.stderr}')
+                  sys.exit(1)
+              print(f'  Job {app_id} completed.')
           PYEOF
+            else
+              echo "No Job phase for ${ENV} — skipping."
+            fi
 
-          # Apply to K8s
-          echo "Deploying to ${ENV}..."
-          if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
-            echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
-            kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
-            exit 1
-          fi
-
-          # Wait for rollout of each app
-          python3 -c "
-          import json, subprocess
+            # ── Phase 2: Deployments — apply & rollout ──────────────────────
+            # Applied only after every Job above completed (gating, ADR-0003).
+            if [ "${APPLY_SKIPPED}" = "true" ]; then
+              echo "Nothing to apply for this run — skipping apply."
+            elif [ -s /tmp/k8s-deployments.yaml ]; then
+              echo "Deploying to ${ENV}..."
+              if ! kubectl apply -f /tmp/k8s-deployments.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-deployments.yaml 2>&1 | head -20
+                exit 1
+              fi
+              echo "Waiting for rollouts (${ENV})..."
+              python3 -c "
+          import json, os, subprocess
           namespace = 'sdd-${ENV}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open('${APPS_JSON}') as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
+              if affected is not None and app_id not in affected:
+                  continue
               print(f'Waiting for rollout of {app_id} in {namespace}...')
               subprocess.run(
                   ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
                   check=False
               )
           "
+            else
+              echo "Nothing to apply for this run — skipping apply."
+            fi
 
-          cd "${REPO_ROOT}"
-      - name: Discover environment URLs
+            cd "${REPO_ROOT}"
+
+            # ── Health gate: DEV must be healthy before QA deploys ──────────
+            # PR-merge runs deploy TARGETS=dev; QA deploys separately after user
+            # approval. Verify every app's /health on the external host URL
+            # right after this env's rollout. If DEV fails, exit — QA never
+            # deploys, and the agent's fix loop repairs the issue before the
+            # pipeline re-runs. Same host.docker.internal:{hostPort} mechanism
+            # as the PROD health gate.
+          python3 << PYEOF
+          import json, os, subprocess, sys, time
+
+          env = "${ENV}"
+          if not os.path.exists('infra/deployment/apps.json'):
+              print(f'ERROR: infra/deployment/apps.json missing - cannot verify {env} health')
+              sys.exit(1)
+          with open('infra/deployment/ports.json') as f:
+              ports = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              apps = json.load(f).get('apps', [])
+
+          failures = []
+          for app in apps:
+              app_id = app['appId']
+              # Job apps (db-bootstrap, migration jobs) have no Service/ports —
+              # they are wait-for-completion phases, not health-check targets.
+              if app.get('kind', 'service') != 'service':
+                  print(f'INFO: {app_id} is a job app - skipping health check')
+                  continue
+              health_path = app.get('healthPath', '/health')
+              host_port = ports.get('environments', {}).get(env, {}).get(app_id, {}).get('hostPort')
+              if not host_port:
+                  print(f'WARNING: no {env} hostPort for {app_id} - skipping health check')
+                  continue
+              url = f'http://host.docker.internal:{host_port}'
+              print(f'Checking {app_id}: {url}{health_path}')
+              ok = False
+              last_err = ''
+              for _attempt in range(6):  # bounded retry; pods take a moment to become ready
+                  try:
+                      result = subprocess.run(
+                          ['curl', '-s', '--fail', '--max-time', '10', f'{url}{health_path}'],
+                          capture_output=True, text=True, timeout=20
+                      )
+                      if result.returncode == 0:
+                          try:
+                              body = json.loads(result.stdout)
+                              ok = body.get('status') == 'ok'
+                          except Exception:
+                              ok = '"ok"' in result.stdout
+                          if ok:
+                              break
+                          last_err = f'/health did not return status=ok ({result.stdout[:120]!r})'
+                      else:
+                          last_err = 'curl/HTTP request failed'
+                  except Exception as exc:
+                      last_err = f'health check error ({exc})'
+                  if _attempt < 5:
+                      time.sleep(10)
+              if ok:
+                  print(f'  PASS: {app_id} /health OK')
+              else:
+                  failures.append(f'{app_id}: {last_err or "health check failed"}')
+
+          if failures:
+              print(f'{env} health verification FAILED - not continuing to next environment:')
+              for failure in failures:
+                  print(f'  - {failure}')
+              sys.exit(1)
+          print(f'{env} health verification passed.')
+          PYEOF
+
+            echo "=== ${ENV} deployment complete ==="
+          done
+
+      # Image pruning is NOT part of CI: the local/kind prune steps were removed
+      # (they never ran reliably). Container/image/volume/kind cleanup is the
+      # ticket-close job — dev-ops-cleanup-resources runs
+      # `environment-lab prune-docker-leftovers` + `prune-kind-images`.
+      - name: Discover environment URLs (all targets)
+        if: steps.changes.outputs.deployable == 'true'
         id: urls
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
@@ -236,17 +1044,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Write kubeconfig from secret to temp file (needed for kubectl in this step)
-          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
-            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+          # Reuse kubeconfig generated by the deploy step (same job, /tmp persists)
+          if [ -f /tmp/kubeconfig ]; then
+            export KUBECONFIG=/tmp/kubeconfig
+          elif [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            echo "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            chmod 600 /tmp/kubeconfig
             export KUBECONFIG=/tmp/kubeconfig
           fi
 
-          export ENV="${{ steps.env.outputs.ENV }}"
           COMMIT_SHA=$(git rev-parse HEAD)
           mkdir -p "app/${COMMIT_SHA}"
 
-          # Single Python script: discover nodePorts + write JSON manifest
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo "=== Discovering ${ENV} URLs ==="
+            export ENV
+            # Single Python script: discover nodePorts + write JSON manifest
           python3 << 'PYEOF'
           import json, os, subprocess
 
@@ -263,11 +1076,15 @@ jobs:
                   config = json.load(f)
               apps = config.get('apps', [])
           else:
-              apps = [{'appId': 'frontend', 'healthPath': '/health'}]
+              apps = []  # template ships no apps (ADR-0005) — nothing to discover
 
           discovered = []
           for app in apps:
               app_id = app['appId']
+              # Job apps expose no Service — nothing to discover (ADR-0003).
+              if app.get('kind', 'service') != 'service':
+                  print(f"  {app_id}: job app (no Service/nodePort) — skipped")
+                  continue
               health_path = app.get('healthPath', '/health')
 
               # Discover nodePort from K8s service
@@ -308,105 +1125,207 @@ jobs:
                   capture_output=True, text=True).stdout.strip()
           }
 
-          urls_file = f'app/{commit_sha}/env-urls.json'
+          urls_file = f'app/{commit_sha}/env-urls-{env}.json'
           with open(urls_file, 'w') as f:
               json.dump(manifest, f, indent=2)
           print(f"\nURL manifest saved to {urls_file}")
           print(json.dumps(manifest, indent=2))
           PYEOF
+          done
+
+      - name: Verify PROD health (page + /health smoke checks)
+        # PROD success requires direct page + /health verification in the
+        # workflow itself (contract: dev-ops-deploy-prod). Apps are exposed on
+        # the host via kind extraPortMappings (canonical host ports in
+        # infra/deployment/ports.json); host.docker.internal reaches the host
+        # from the CI container (container option --add-host host-gateway).
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV == 'prod'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import json, subprocess, sys
+
+          with open('infra/deployment/ports.json') as f:
+              ports = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              config = json.load(f)
+
+          apps = config.get('apps', [])
+          if not apps:
+              print('ERROR: no apps configured in infra/deployment/apps.json — nothing to verify')
+              sys.exit(1)
+          prod_ports = ports.get('environments', {}).get('prod', {})
+          failures = []
+
+          for app in apps:
+              app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  print(f'INFO: {app_id} is a job app - skipping health check')
+                  continue
+              health_path = app.get('healthPath', '/health')
+              host_port = prod_ports.get(app_id, {}).get('hostPort')
+              if not host_port:
+                  print(f'WARNING: no prod hostPort for {app_id} — skipping health check')
+                  continue
+              url = f'http://host.docker.internal:{host_port}'
+              print(f'Checking {app_id}: {url}{health_path}')
+              try:
+                  result = subprocess.run(
+                      ['curl', '-s', '--fail', '--max-time', '10', f'{url}{health_path}'],
+                      capture_output=True, text=True, timeout=20
+                  )
+                  if result.returncode != 0:
+                      failures.append(f'{app_id}: /health failed ({result.stderr.strip() or "HTTP error"})')
+                      continue
+                  ok = False
+                  try:
+                      body = json.loads(result.stdout)
+                      ok = body.get('status') == 'ok'
+                  except Exception:
+                      ok = '"ok"' in result.stdout
+                  if ok:
+                      print(f'  PASS: {app_id} /health OK')
+                  else:
+                      failures.append(f'{app_id}: /health did not return status=ok ({result.stdout[:120]!r})')
+              except Exception as exc:
+                  failures.append(f'{app_id}: health check error ({exc})')
+
+          if failures:
+              print('PROD health verification FAILED:')
+              for failure in failures:
+                  print(f'  - {failure}')
+              sys.exit(1)
+          print('PROD health verification passed.')
+          PYEOF
 
       - name: Generate Nexus metadata artifacts
+        # App-aware (ADR-0002): deployable-apps.json and container-images.json
+        # list only the built/deployed apps on filtered runs; AFFECTED_APPS=ALL
+        # (unconditional dispatch) lists every app — so QA re-runs always
+        # overwrite the commit's evidence with the full app set PROD verifies.
+        if: steps.changes.outputs.deployable == 'true'
+        env:
+          # Optional PROD release metadata (workflow_dispatch inputs); empty for
+          # PR-merge runs — release-{env}.json falls back to version 0.1.0.
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
           COMMIT_SHA=$(git rev-parse HEAD)
-          ENV="${{ steps.env.outputs.ENV }}"
           mkdir -p "app/${COMMIT_SHA}"
 
-          # Write commit.sha
+          # Write commit.sha (shared across all environments)
           echo "${COMMIT_SHA}" > "app/${COMMIT_SHA}/commit.sha"
 
-          # Write deployable-apps.json from apps.json
-          python3 -c "
-import json
-with open('infra/deployment/apps.json') as f:
-    deploy_config = json.load(f)
-deployable = {
-    'version': 1,
-    'commitSha': '${COMMIT_SHA}',
-    'apps': [
-        {
-            'appId': app['appId'],
-            'artifactName': f\"{app['appId']}-sdd-app.zip\",
-            'healthPath': app.get('healthPath', '/health'),
-            'role': app.get('role', 'web'),
-            'deployOrder': app.get('deployOrder', 0)
-        }
-        for app in deploy_config.get('apps', [])
-    ]
-}
-with open('app/${COMMIT_SHA}/deployable-apps.json', 'w') as f:
-    json.dump(deployable, f, indent=2)
-print('Created deployable-apps.json')
-"
-
-          # Write container-images.json (for deployment tracking)
+          # Write deployable-apps.json from apps.json (shared across all environments)
           python3 << PYEOF
-import json, os
+          import json, os
 
-commit_sha = "${COMMIT_SHA}"
-registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          commit_sha = "${COMMIT_SHA}"
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
 
-with open('infra/deployment/apps.json') as f:
-    deploy_config = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              deploy_config = json.load(f)
 
-images = {
-    'version': 1,
-    'commitSha': commit_sha,
-    'apps': [
-        {
-            'appId': app['appId'],
-            'image': f'{registry}/{app["appId"]}:{commit_sha}'
-        }
-        for app in deploy_config.get('apps', [])
-    ]
-}
+          deployable_apps = [
+              {
+                  'appId': app['appId'],
+                  'artifactName': f'{app["appId"]}-sdd-app.zip',
+                  'healthPath': app.get('healthPath', '/health'),
+                  'role': app.get('role', 'web'),
+                  'deployOrder': app.get('deployOrder', 0)
+              }
+              for app in deploy_config.get('apps', [])
+              if affected is None or app['appId'] in affected
+          ]
 
-path = f'app/{commit_sha}/container-images.json'
-with open(path, 'w') as f:
-    json.dump(images, f, indent=2)
-print(f'Created {path}')
-PYEOF
+          deployable = {
+              'version': 1,
+              'commitSha': commit_sha,
+              'apps': deployable_apps
+          }
 
-          # Write release.json with deployment metadata
-          # Extract ticket key from the latest commit message (e.g. 'E2EPROJECT-37: ...')
-          TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo '')
+          with open(f'app/{commit_sha}/deployable-apps.json', 'w') as f:
+              json.dump(deployable, f, indent=2)
+          print('Created deployable-apps.json')
+          PYEOF
+
+          # Write container-images.json (for deployment tracking, shared across all environments)
           python3 << PYEOF
-import json
-from datetime import datetime, timezone
+          import json, os
 
-commit_sha = "${COMMIT_SHA}"
-env = "${ENV}"
-ticket_key = "${TICKET_KEY}"
+          commit_sha = "${COMMIT_SHA}"
+          registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
 
-release = {
-    'version': '0.1.0',
-    'commitSha': commit_sha,
-    'environment': env,
-    'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'versionStatus': 'unversioned'
-}
-if ticket_key:
-    release['ticketKey'] = ticket_key
+          with open('infra/deployment/apps.json') as f:
+              deploy_config = json.load(f)
 
-path = f'app/{commit_sha}/release.json'
-with open(path, 'w') as f:
-    json.dump(release, f, indent=2)
-print(f'Created {path}')
-print(f'  ticketKey: {ticket_key or "(not found)"}')
-PYEOF
+          images = {
+              'version': 1,
+              'commitSha': commit_sha,
+              'apps': [
+                  {
+                      'appId': app['appId'],
+                      'image': f'{registry}/{app["appId"]}:{commit_sha}'
+                  }
+                  for app in deploy_config.get('apps', [])
+                  if affected is None or app['appId'] in affected
+              ]
+          }
+
+          path = f'app/{commit_sha}/container-images.json'
+          with open(path, 'w') as f:
+              json.dump(images, f, indent=2)
+          print(f'Created {path}')
+          PYEOF
+
+          # Extract ticket key from the latest commit message (e.g. 'TICKET-37: ...')
+          TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z0-9]+-[0-9]+' | head -1 || echo '')
+
+          # Write release.json per deployed environment
+          RELEASE_VERSION="${RELEASE_VERSION:-0.1.0}"
+          SOURCE_RC_VERSION="${SOURCE_RC_VERSION:-}"
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo "=== Generating release metadata for ${ENV} ==="
+          python3 << PYEOF
+          import json
+          from datetime import datetime, timezone
+
+          commit_sha = "${COMMIT_SHA}"
+          env = "${ENV}"
+          ticket_key = "${TICKET_KEY}"
+
+          release = {
+              'version': "${RELEASE_VERSION}",
+              'commitSha': commit_sha,
+              'environment': env,
+              'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'versionStatus': 'unversioned'
+          }
+          if "${SOURCE_RC_VERSION}" != "":
+              release['sourceRcVersion'] = "${SOURCE_RC_VERSION}"
+          if ticket_key:
+              release['ticketKey'] = ticket_key
+
+          path = f'app/{commit_sha}/release-{env}.json'
+          with open(path, 'w') as f:
+              json.dump(release, f, indent=2)
+          print(f'Created {path}')
+          print(f'  version: {release["version"]}')
+          print(f'  ticketKey: {ticket_key or "(not found)"}')
+          if release.get('sourceRcVersion'):
+              print(f'  sourceRcVersion: {release["sourceRcVersion"]}')
+          PYEOF
+          done
 
       - name: Upload artifacts to Nexus
+        if: steps.changes.outputs.deployable == 'true'
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -443,10 +1362,12 @@ PYEOF
             fi
           done
 
-          # Upload latest env URLs pointer
-          DEPLOY_ENV="${{ steps.env.outputs.ENV }}"
-          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls.json"); do
-            LATEST_PATH="app/latest/env-urls-${DEPLOY_ENV:-dev}.json"
+          # Upload latest env URLs pointer for every deployed environment
+          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls-*.json"); do
+            filename=$(basename "$file")
+            env_name="${filename#env-urls-}"
+            env_name="${env_name%.json}"
+            LATEST_PATH="app/latest/env-urls-${env_name}.json"
             echo "Uploading ${file} as ${LATEST_PATH}"
             curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
               -X PUT \

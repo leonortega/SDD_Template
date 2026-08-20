@@ -1,0 +1,22 @@
+{
+  "$schema": "./project-profile.schema.json",
+  "schemaVersion": 1,
+  "projectName": "",
+  "stack": {
+    "frontend": {
+      "applies": false,
+      "value": ""
+    },
+    "backend": {
+      "applies": false,
+      "value": ""
+    },
+    "database": {
+      "applies": false,
+      "value": ""
+    },
+    "languages": [],
+    "frameworks": [],
+    "testFrameworks": []
+  }
+}

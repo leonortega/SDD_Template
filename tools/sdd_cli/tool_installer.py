@@ -1,4 +1,4 @@
-"""Tool installer: lefthook, codegraph, codebase-memory, claw-compactor, quality tools."""
+"""Tool installer: lefthook, MCP servers, quality tools."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from ._shared import (
     configure_result,
     get_sdd_tool_preserve_files,
     git_text,
+    native_command,
     parse_pairs,
     read_env_file,
     read_json,
@@ -160,7 +161,7 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def _resolve_lefthook() -> str | None:
     """Find lefthook binary in PATH or user-local bin."""
-    user_bin = _lefthook_user_bin()
+    user_bin = _tool_user_bin()
     exe = "lefthook.exe" if sys.platform.startswith("win") else "lefthook"
     if (user_bin / exe).exists():
         return str(user_bin / exe)
@@ -171,7 +172,7 @@ def _resolve_lefthook() -> str | None:
     return None
 
 
-def _lefthook_user_bin() -> Path:
+def _tool_user_bin() -> Path:
     if sys.platform.startswith("win"):
         return (
             Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
@@ -180,7 +181,7 @@ def _lefthook_user_bin() -> Path:
     return Path.home() / ".local" / "bin"
 
 
-def _lefthook_platform() -> str | None:
+def _tool_platform() -> str | None:
     if sys.platform.startswith("win"):
         return "windows"
     if sys.platform.startswith("darwin"):
@@ -190,7 +191,7 @@ def _lefthook_platform() -> str | None:
     return None
 
 
-def _lefthook_arch_github() -> str | None:
+def _tool_arch_github() -> str | None:
     machine = platform.machine().lower()
     if sys.platform == "win32":
         env_machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
@@ -214,8 +215,8 @@ def _lefthook_arch_github() -> str | None:
 
 def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | None:
     """Download lefthook binary from GitHub releases."""
-    platform_name = _lefthook_platform()
-    arch = _lefthook_arch_github()
+    platform_name = _tool_platform()
+    arch = _tool_arch_github()
     if not platform_name or not arch:
         add_bucket_item(
             result["findings"],
@@ -226,7 +227,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
             "apply",
         )
         return None
-    bin_dir = _lefthook_user_bin()
+    bin_dir = _tool_user_bin()
     bin_name = "lefthook.exe" if platform_name == "windows" else "lefthook"
     destination = bin_dir / bin_name
     if destination.exists():
@@ -308,240 +309,234 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
         return None
 
 
-# ── Codegraph MCP ────────────────────────────────────────────────────────
+# ── Kustomize ────────────────────────────────────────────────────────────
+
+# Pinned to match the CI image (infra/gitea/actions-images/e2e-ci/Dockerfile
+# installs kustomize v5.4.3) so local overlay rendering matches CI rendering.
+KUSTOMIZE_VERSION = "5.4.3"
 
 
-def install_codegraph(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Verify codegraph via npx and ensure .codex/config.toml has MCP config."""
-    result = configure_result("InstallCodegraph", dry_run, write_enabled=not dry_run)
-    npx_check = run_native(["npx", "--version"], root, timeout=10)
-    if npx_check["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "npx",
-            "missing",
-            f"npx is not available: {npx_check['stderr']}",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    verify_command = ["npx", "--yes", "@colbymchenry/codegraph@1.1.1", "--version"]
-    if dry_run:
+def _resolve_kustomize() -> str | None:
+    """Find the kustomize binary in PATH or user-local bin."""
+    user_bin = _tool_user_bin()
+    exe = "kustomize.exe" if sys.platform.startswith("win") else "kustomize"
+    if (user_bin / exe).exists():
+        return str(user_bin / exe)
+    for name in ("kustomize", "kustomize.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def install_kustomize(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Install the kustomize binary (pinned to :data:`KUSTOMIZE_VERSION`).
+
+    Mirrors :func:`install_lefthook`: resolves the binary, auto-downloads it
+    into user-local bin when missing, and verifies it runs. The
+    ``validate-k8s-overlays`` gate (k8s_validate.py) needs kustomize locally to
+    render the dev/qa/prod overlays.
+    """
+    result = configure_result("InstallKustomize", dry_run, write_enabled=not dry_run)
+    kustomize_path = _resolve_kustomize()
+    if kustomize_path is None:
         result["actions"].append(
             {
-                "path": "npx",
-                "key": "verify-codegraph",
+                "path": "kustomize",
+                "key": "install",
                 "severity": "info",
-                "message": f"Would verify codegraph: {' '.join(verify_command)}",
+                "message": "kustomize binary not found. Attempting auto-install.",
                 "phase": "apply",
             }
         )
-        result["valid"] = True
-        return result
-    verify = run_native(verify_command, root, timeout=60)
-    if verify["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "codegraph",
-            "verify",
-            f"Could not verify codegraph: {verify['stderr']}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": "npx",
-            "key": "verify-codegraph",
-            "severity": "info",
-            "message": f"Codegraph verified: {verify['stdout']}",
-            "phase": "apply",
-        }
-    )
-    config_path = root / ".codex" / "config.toml"
-    config_dir = config_path.parent
-    if not config_dir.exists():
-        if not dry_run:
-            config_dir.mkdir(parents=True, exist_ok=True)
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "directory",
-                "severity": "info",
-                "message": "Created .codex directory.",
-                "phase": "apply",
-            }
-        )
-    codegraph_config_present = False
-    if config_path.exists():
-        existing_content = config_path.read_text(encoding="utf-8")
-        if "[mcp_servers.codegraph]" in existing_content:
-            codegraph_config_present = True
-    if not codegraph_config_present:
         if dry_run:
             result["actions"].append(
                 {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
+                    "path": "kustomize",
+                    "key": "install",
                     "severity": "info",
-                    "message": "Would add codegraph MCP config to .codex/config.toml.",
+                    "message": "Would download and install kustomize to user-local bin.",
                     "phase": "apply",
                 }
             )
-        else:
-            codegraph_section = """[mcp_servers.codegraph]
-command = "npx"
-args = ["--yes", "@colbymchenry/codegraph@1.1.1", "serve", "--mcp"]
-
-[mcp_servers.codegraph.env]
-CODEGRAPH_TELEMETRY = "0"
-DO_NOT_TRACK = "1"
-
-"""
-            if config_path.exists():
-                existing_content = config_path.read_text(encoding="utf-8")
-                config_path.write_text(
-                    existing_content + "\n" + codegraph_section, encoding="utf-8"
-                )
-            else:
-                config_path.write_text(codegraph_section, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
-                    "severity": "info",
-                    "message": "Added codegraph MCP server configuration to .codex/config.toml.",
-                    "phase": "apply",
-                }
-            )
-    else:
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "codegraph-config",
-                "severity": "info",
-                "message": "Codegraph MCP server configuration already present.",
-                "phase": "apply",
-            }
-        )
-    result["valid"] = True
-    return result
-
-
-# ── Codebase-memory MCP ──────────────────────────────────────────────────
-
-
-def install_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Register codebase-memory-mcp in .vscode/mcp.json."""
-    result = configure_result(
-        "InstallCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-    shim_path = root / "tools" / "codebase_memory_mcp" / "mcp_cap_shim.py"
-    if not shim_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "tools/codebase_memory_mcp/mcp_cap_shim.py",
-            "missing.shim",
-            "codebase-memory-mcp shim script not found. Run tools/codebase_memory_mcp/install.ps1 first.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    server_name = "codebase-memory-mcp"
-    expected_entry = {
-        "type": "stdio",
-        "command": sys.executable,
-        "args": [str(shim_path)],
-    }
-    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
-
-
-# ── Claw-compactor ───────────────────────────────────────────────────────
-
-
-def install_claw_compactor(
-    root: Path, version: str | None = None, dry_run: bool = False
-) -> dict[str, Any]:
-    """Install claw-compactor into the shared MCP venv."""
-    user_home = Path.home()
-    mcp_python = user_home / ".mcp_shared_venv" / "Scripts" / "python.exe"
-    if not mcp_python.exists():
-        return {
-            "command": "install-claw",
-            "valid": False,
-            "error": f"MCP shared venv not found at {mcp_python}. Run the MCP server setup first.",
-        }
-    pip_args = [str(mcp_python), "-m", "pip", "install"]
-    if version:
-        pip_args += [f"claw-compactor=={version}"]
-    else:
-        pip_args += ["claw-compactor"]
-    result = configure_result(
-        "InstallClawCompactor", dry_run, write_enabled=not dry_run
-    )
+            result["valid"] = True
+            return result
+        kustomize_path = _install_kustomize_user_local(result)
+        if kustomize_path is None:
+            result["valid"] = False
+            return result
     if dry_run:
         result["actions"].append(
             {
-                "path": str(mcp_python),
-                "key": "pip-install",
+                "path": "kustomize",
+                "key": "verify",
                 "severity": "info",
-                "message": f"Would install claw-compactor{'==' + version if version else ''}.",
+                "message": f"Would verify kustomize at {kustomize_path}.",
                 "phase": "apply",
             }
         )
         result["valid"] = True
         return result
-    install_result = subprocess.run(pip_args, capture_output=True, text=True)  # nosec
-    if install_result.returncode != 0:
+    check = run_native([kustomize_path, "version"], root, timeout=15)
+    if check["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "kustomize",
+                "key": "verify",
+                "severity": "info",
+                "message": f"Kustomize available: {check['stdout'][:60]}",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+    else:
         add_bucket_item(
             result["findings"],
-            "claw-compactor",
-            "pip-install",
-            f"Could not install claw-compactor: {install_result.stderr.strip()}",
+            "kustomize",
+            "verify",
+            f"kustomize binary found but failed to run: {check['stderr'][:120] or check['stdout'][:120]}",
             "error",
             "apply",
         )
         result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": str(mcp_python),
-            "key": "pip-install",
-            "severity": "info",
-            "message": install_result.stdout.strip(),
-            "phase": "apply",
-        }
-    )
-    check = subprocess.run(  # nosec
-        [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
-        capture_output=True,
-        text=True,
-    )
-    if check.returncode == 0:
+    return result
+
+
+def _install_kustomize_user_local(result: dict[str, Any]) -> str | None:
+    """Download and extract the pinned kustomize binary from GitHub releases.
+
+    Kustomize publishes ``.tar.gz`` archives for Linux/macOS (single
+    ``kustomize`` member) and ``.zip`` archives for Windows (single
+    ``kustomize.exe`` member) — unlike lefthook's raw binaries. The payload is
+    extracted in memory with :mod:`tarfile`/:mod:`zipfile`.
+    """
+    platform_name = _tool_platform()
+    arch = _tool_arch_github()
+    # Kustomize release assets use amd64/arm64 — lefthook-style x86_64/i386
+    # names do not exist in kubernetes-sigs/kustomize releases (CI image uses
+    # kustomize_v5.4.3_linux_amd64.tar.gz).
+    kustomize_arch = {"x86_64": "amd64", "arm64": "arm64"}.get(arch)
+    if not platform_name or not kustomize_arch:
+        add_bucket_item(
+            result["findings"],
+            "kustomize",
+            "platform.unsupported",
+            f"Unsupported platform/arch for kustomize auto-install: {sys.platform}/{arch}",
+            "error",
+            "apply",
+        )
+        return None
+    bin_dir = _tool_user_bin()
+    bin_name = "kustomize.exe" if platform_name == "windows" else "kustomize"
+    destination = bin_dir / bin_name
+    if destination.exists():
         result["actions"].append(
             {
-                "path": str(mcp_python),
-                "key": "verify",
+                "path": str(destination),
+                "key": "install",
                 "severity": "info",
-                "message": "claw-compactor installed and verified.",
+                "message": "kustomize binary already exists.",
                 "phase": "apply",
             }
         )
-    else:
+        return str(destination)
+    # Tag is `kustomize/v5.4.3`; GitHub canonicalizes the embedded slash as
+    # %2F in the download path (same asset the CI image fetches).
+    tag = f"kustomize/v{KUSTOMIZE_VERSION}"
+    asset_ext = ".zip" if platform_name == "windows" else ".tar.gz"
+    asset = f"kustomize_v{KUSTOMIZE_VERSION}_{platform_name}_{kustomize_arch}{asset_ext}"
+    download_url = (
+        "https://github.com/kubernetes-sigs/kustomize/releases/download/"
+        f"{tag.replace('/', '%2F')}/{asset}"
+    )
+    result["actions"].append(
+        {
+            "path": "kustomize",
+            "key": "download",
+            "severity": "info",
+            "message": f"Downloading kustomize from {download_url}.",
+            "phase": "apply",
+        }
+    )
+    try:
+        import io
+        import tarfile
+        import urllib.request
+        import zipfile
+
+        req = urllib.request.Request(download_url, headers={"User-Agent": "sdd-cli"})
+        with urllib.request.urlopen(req, timeout=60) as response:  # nosec
+            payload = response.read()
+        if not payload:
+            add_bucket_item(
+                result["findings"],
+                "kustomize",
+                "download",
+                "Downloaded kustomize payload was empty.",
+                "error",
+                "apply",
+            )
+            return None
+        if platform_name == "windows":
+            # Windows assets are .zip archives containing kustomize.exe.
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                data = archive.read("kustomize.exe")
+        else:
+            with tarfile.open(fileobj=io.BytesIO(payload), mode="r:*") as archive:
+                member = next(
+                    (
+                        m
+                        for m in archive.getmembers()
+                        if m.isfile() and m.name == "kustomize"
+                    ),
+                    None,
+                )
+                if member is None:
+                    add_bucket_item(
+                        result["findings"],
+                        "kustomize",
+                        "archive",
+                        "kustomize archive did not contain a kustomize binary member.",
+                        "error",
+                        "apply",
+                    )
+                    return None
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    add_bucket_item(
+                        result["findings"],
+                        "kustomize",
+                        "archive",
+                        "Could not read the kustomize binary from the archive.",
+                        "error",
+                        "apply",
+                    )
+                    return None
+                data = extracted.read()
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        if platform_name != "windows":
+            destination.chmod(destination.stat().st_mode | 0o111)
+        result["actions"].append(
+            {
+                "path": str(destination),
+                "key": "install",
+                "severity": "info",
+                "message": f"Installed kustomize to {destination}. Ensure this dir is on PATH for 'kustomize build' in validate-k8s-overlays.",
+                "phase": "apply",
+            }
+        )
+        return str(destination)
+    except Exception as ex:
         add_bucket_item(
             result["findings"],
-            "claw-compactor",
-            "verify",
-            "claw-compactor installed but CLI verification failed.",
-            "warning",
+            "kustomize",
+            "install",
+            f"Could not install kustomize: {ex}",
+            "error",
             "apply",
         )
-    result["valid"] = True
-    return result
+        return None
 
 
 # ── SDD Tool install/update ──────────────────────────────────────────────
@@ -666,7 +661,7 @@ def install_or_update_sdd_tool(
         "schemaVersion": 1,
         "tool": "sdd-tool",
         "version": version or _latest_sdd_tool_version(source),
-        "sourceRepo": git_text(source, ["config", "--get", "remote.origin.url"])
+        "sourceRepo": git_text(source, ["config", "--get", "remote.gitea.url"])
         or str(source),
         "sourceCommit": git_text(source, ["rev-parse", "HEAD"]),
         "installedAtUtc": datetime.now(timezone.utc)
@@ -698,6 +693,56 @@ def install_or_update_sdd_tool(
 # ── MCP registration helper ──────────────────────────────────────────────
 
 
+def _cline_settings_targets() -> list[Path]:
+    """Cline MCP settings files to sync, in priority order.
+
+    Returns the standalone Cline location always, plus any legacy VS Code
+    extension locations that already exist. Shared by the registration writer
+    (``_register_mcp_entry._write_cline``) and the junk-entry pruner
+    (``_prune_junk_mcp_servers``) so both operate on the same file set.
+    """
+    new_cline = (
+        Path.home() / ".cline" / "data" / "settings" / "cline_mcp_settings.json"
+    )
+    candidates: list[Path] = [new_cline]
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.append(
+                Path(appdata)
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+    elif sys.platform == "darwin":
+        candidates.append(
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Code"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
+    else:
+        candidates.append(
+            Path.home()
+            / ".config"
+            / "Code"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
+    return [new_cline] + [p for p in candidates[1:] if p.exists()]
+
+
 def _register_mcp_entry(
     root: Path,
     mcp_path: Path,
@@ -706,221 +751,245 @@ def _register_mcp_entry(
     result: dict[str, Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Register a single MCP entry under the mcpServers key in .vscode/mcp.json.
+    """Register a single MCP entry under the mcpServers key.
+
+    Writes to both .vscode/mcp.json and Cline's global MCP settings
+    (at %APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+    on Windows, or ~/.config/... on Linux/macOS).
 
     Shared helper used by all install_*_mcp functions.
     """
-    if not mcp_path.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".vscode/mcp.json",
-                    "key": "create",
-                    "severity": "info",
-                    "message": f"Would create .vscode/mcp.json with {server_name}.",
-                    "phase": "apply",
-                }
-            )
-            result["valid"] = True
-            return result
-        config: dict[str, Any] = {"mcpServers": {}}
-    else:
-        try:
-            config = read_json(mcp_path, optional=False)
-        except Exception:
+    # ── Helper: build mcp entry dict ──────────────────────────────────
+    def _build_entry() -> dict[str, Any]:
+        # Supports both stdio entries (command/args/env) and remote HTTP
+        # entries (type=http, url, headers). Anything the installer declares is
+        # passed through untouched so http servers are not rewritten as stdio;
+        # Cline settings files translate the type to Cline's streamableHttp
+        # form in _write_cline (VS Code keeps the http form in .vscode/mcp.json).
+        entry: dict[str, Any] = {}
+        if "command" in expected_entry:
+            entry["command"] = expected_entry["command"]
+            entry["args"] = expected_entry["args"]
+        if "url" in expected_entry:
+            entry["url"] = expected_entry["url"]
+        if "headers" in expected_entry:
+            entry["headers"] = expected_entry["headers"]
+        if "env" in expected_entry:
+            entry["env"] = expected_entry["env"]
+        if "type" in expected_entry:
+            entry["type"] = expected_entry["type"]
+        return entry
+
+    # ── Write to .vscode/mcp.json ─────────────────────────────────────
+    def _write_vscode() -> bool:
+        """Write the MCP entry to VS Code's native .vscode/mcp.json.
+
+        VS Code 1.100+ reads the top-level "servers" key (schema uses
+        additionalProperties: false, so "mcpServers" would be rejected).
+        Any legacy "mcpServers" key (Cline/Claude Desktop format) is
+        migrated to "servers" automatically. Entries are written with an
+        explicit "type": "stdio".
+        """
+        nonlocal mcp_path
+        if not mcp_path.exists():
+            cfg: dict[str, Any] = {"servers": {}}
+        else:
+            try:
+                cfg = read_json(mcp_path, optional=False)
+            except Exception:
+                add_bucket_item(
+                    result["findings"],
+                    ".vscode/mcp.json",
+                    "parse.error",
+                    "Could not parse existing .vscode/mcp.json.",
+                    "error",
+                    "pre-start",
+                )
+                return False
+        if not isinstance(cfg, dict):
+            cfg = {}
+        # Migrate legacy Cline/Claude-Desktop "mcpServers" key to the native
+        # VS Code "servers" key so servers show up in the MCP panel. Always
+        # remove the legacy key — VS Code's schema uses additionalProperties:
+        # false, so a leftover "mcpServers" would be flagged as invalid.
+        legacy = cfg.pop("mcpServers", None)
+        if isinstance(legacy, dict):
+            servers_existing = cfg.setdefault("servers", {})
+            if isinstance(servers_existing, dict):
+                # Merge legacy entries in, dropping keys VS Code's schema does
+                # not allow inside a server entry (e.g. "description").
+                _allowed_entry_keys = {"type", "command", "args", "cwd", "env", "envFile", "dev", "sandboxEnabled"}
+                for _name, _entry in legacy.items():
+                    if isinstance(_entry, dict):
+                        servers_existing[_name] = {
+                            k: v for k, v in _entry.items() if k in _allowed_entry_keys
+                        }
+                    else:
+                        servers_existing[_name] = _entry
+            else:
+                cfg["servers"] = legacy
+        servers = cfg.setdefault("servers", {})
+        if not isinstance(servers, dict):
             add_bucket_item(
                 result["findings"],
                 ".vscode/mcp.json",
-                "parse.error",
-                "Could not parse existing .vscode/mcp.json.",
+                "invalid.servers",
+                "servers key must be a JSON object.",
                 "error",
                 "pre-start",
             )
-            result["valid"] = False
-            return result
-    servers = config.get("mcpServers", {})
-    if not isinstance(servers, dict):
-        add_bucket_item(
-            result["findings"],
-            ".vscode/mcp.json",
-            "invalid.mcpServers",
-            "mcpServers key must be a JSON object.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    existing = servers.get(server_name)
-    if existing == expected_entry:
-        result["actions"].append(
-            {
+            return False
+        existing = servers.get(server_name)
+        entry = _build_entry()
+        # VS Code expects an explicit transport type for stdio servers; remote
+        # http entries already carry their own "type": "http".
+        if "command" in entry and "type" not in entry:
+            entry = {"type": "stdio", **entry}
+        servers[server_name] = entry
+        cfg["servers"] = servers
+        mcp_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(mcp_path, cfg)
+        if existing and existing != entry:
+            changed_keys = [k for k in entry if existing.get(k) != entry[k]]
+            result["actions"].append({
                 "path": ".vscode/mcp.json",
                 "key": server_name,
                 "severity": "info",
-                "message": f"{server_name} is already configured in .vscode/mcp.json.",
+                "message": f"Updated {server_name} in .vscode/mcp.json (changed: {', '.join(changed_keys)}).",
                 "phase": "apply",
-            }
-        )
+            })
+        else:
+            result["actions"].append({
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Added {server_name} to .vscode/mcp.json.",
+                "phase": "apply",
+            })
+        return True
+
+    # ── Write to Cline global settings ────────────────────────────────
+    def _write_cline() -> bool:
+        """Write the MCP entry to Cline's global mcp_settings.json.
+
+        Cline versions store this file in different places:
+        - newer standalone Cline -> ~/.cline/data/settings/cline_mcp_settings.json
+        - older VS Code extension -> %APPDATA%/Code/User/globalStorage/
+          saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+
+        We write to every existing candidate (new location always, plus any
+        legacy locations that exist), preserving existing entries and their
+        format (flat vs. the newer {"transport": {"type": "stdio", ...}}
+        wrapper) so both standalone Cline and the VS Code extension stay in
+        sync.
+        """
+        targets = _cline_settings_targets()
+        entry = _build_entry()
+        # Cline's schema rejects "type": "http" for remote streamable HTTP
+        # servers — the whole settings file fails validation with "[Invalid MCP
+        # settings schema.]" (cline issue #7091). Cline documents
+        # "streamableHttp" (camelCase) as the type for remote HTTP servers,
+        # while VS Code's native .vscode/mcp.json schema uses "http". Translate
+        # the type ONLY for Cline files; the source entry keeps "http" so
+        # _write_vscode writes the VS Code-valid form.
+        cline_entry = dict(entry)
+        # Only url-based remote entries carry the VS Code-style "http" type;
+        # Cline's remote schema names it "streamableHttp".
+        if cline_entry.get("type") == "http" and "url" in cline_entry:
+            cline_entry["type"] = "streamableHttp"
+        for cline_path in targets:
+            cline_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                cline_data = read_json(cline_path, optional=True) or {}
+            except Exception:
+                cline_data = {}
+            if not isinstance(cline_data, dict):
+                cline_data = {}
+            cline_servers = cline_data.setdefault("mcpServers", {})
+            if not isinstance(cline_servers, dict):
+                cline_servers = {}
+                cline_data["mcpServers"] = cline_servers
+            # Preserve the format already used in this file: newer Cline wraps
+            # stdio entries in {"transport": {"type": "stdio", ...}}. Remote
+            # http (url-based) servers are always stored flat — Cline does not
+            # wrap those in a transport object.
+            use_transport = any(
+                isinstance(v, dict) and "transport" in v
+                for v in cline_servers.values()
+            )
+            if "url" in cline_entry:
+                cline_servers[server_name] = cline_entry
+            elif use_transport:
+                cline_servers[server_name] = {
+                    "transport": {"type": "stdio", **cline_entry}
+                }
+            else:
+                cline_servers[server_name] = cline_entry
+            write_json(cline_path, cline_data)
+            result["actions"].append({
+                "path": str(cline_path),
+                "key": server_name,
+                "severity": "info",
+                "message": f"Synced {server_name} to Cline global MCP settings ({cline_path.name}).",
+                "phase": "apply",
+            })
+        return True
+
+    if dry_run:
+        result["actions"].append({
+            "path": ".vscode/mcp.json",
+            "key": server_name,
+            "severity": "info",
+            "message": f"Would register {server_name} in .vscode/mcp.json and Cline settings.",
+            "phase": "apply",
+        })
         result["valid"] = True
         return result
-    if existing is not None:
-        changed_keys = [
-            k for k in expected_entry if existing.get(k) != expected_entry[k]
-        ]
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Adding {server_name} server to .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-    if not dry_run:
-        servers[server_name] = expected_entry
-        config["mcpServers"] = servers
-        mcp_path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(mcp_path, config)
-    result["valid"] = True
+
+    vscode_ok = _write_vscode()
+    cline_ok = _write_cline()
+
+    result["valid"] = vscode_ok
     return result
 
 
-# ── monorepo-docs-search MCP ─────────────────────────────────────────────
+def _install_mcp(
+    root: Path,
+    mode: str,
+    server_name: str,
+    expected_entry: dict[str, Any],
+    dry_run: bool,
+    warnings: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Shared plumbing for every install_*_mcp function.
 
-
-def install_monorepo_docs_search(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Set up the monorepo-docs-search MCP server (shared venv + registration).
-
-    Creates a shared venv at ~/.mcp_shared_venv, installs mcp + bm25s + flashrank,
-    then registers the server in .vscode/mcp.json.
+    Builds the configure result, appends dry-run or warning actions, and
+    delegates to :func:`_register_mcp_entry`. Installers only supply the mode
+    name, server key, and the expected entry (plus optional warning actions).
     """
-    result = configure_result(
-        "InstallMonorepoDocsSearch", dry_run, write_enabled=not dry_run
-    )
-    user_profile = os.environ.get("USERPROFILE") or os.path.expandvars("%USERPROFILE%")
-    if not user_profile:
-        add_bucket_item(
-            result["findings"],
-            "monorepo-docs-search",
-            "env.userprofile",
-            "USERPROFILE env var not found.",
-            "error",
-            "pre-start",
+    result = configure_result(mode, dry_run, write_enabled=not dry_run)
+    mcp_path = root / ".vscode" / "mcp.json"
+    for warning in warnings or []:
+        result["actions"].append(
+            {
+                **warning,
+                "severity": "warning",
+                "phase": "audit",
+            }
         )
-        result["valid"] = False
-        return result
-
-    venv_dir = os.path.join(user_profile, ".mcp_shared_venv")
-    python_exe = os.path.join(venv_dir, "Scripts", "python.exe")
-    pip_exe = os.path.join(venv_dir, "Scripts", "pip.exe")
-    script_path = str(root / "tools" / "bm25s_flashrank" / "mcp_doc_research.py")
-
-    if not os.path.exists(script_path):
-        add_bucket_item(
-            result["findings"],
-            "tools/bm25s_flashrank/mcp_doc_research.py",
-            "missing.script",
-            "mcp_doc_research.py not found. Is the SDD tool installed?",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
     if dry_run:
         result["actions"].append(
             {
-                "path": ".mcp_shared_venv",
-                "key": "create",
-                "severity": "info",
-                "message": "Would create shared venv and install mcp, bm25s, flashrank.",
-                "phase": "apply",
-            }
-        )
-        result["actions"].append(
-            {
                 "path": ".vscode/mcp.json",
-                "key": "monorepo-docs-search",
+                "key": server_name,
                 "severity": "info",
-                "message": "Would register monorepo-docs-search MCP server.",
+                "message": f"Would register {server_name} MCP server.",
                 "phase": "apply",
             }
         )
         result["valid"] = True
         return result
-
-    # Create venv if needed
-    if not os.path.exists(venv_dir):
-        import venv
-        venv.create(venv_dir, with_pip=True)
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Created shared virtual environment.",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Shared virtual environment already exists.",
-                "phase": "audit",
-            }
-        )
-
-    # Upgrade pip
-    subprocess.run(
-        [pip_exe, "install", "--upgrade", "pip", "--quiet"],
-        check=False,
-    )
-    # Install deps
-    deps_result = subprocess.run(
-        [pip_exe, "install", "mcp", "bm25s", "flashrank", "--quiet"],
-        capture_output=True, text=True, check=False,
-    )
-    if deps_result.returncode != 0:
-        add_bucket_item(
-            result["findings"],
-            ".mcp_shared_venv",
-            "pip.install",
-            f"Failed to install packages: {deps_result.stderr.strip()}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": ".mcp_shared_venv",
-            "key": "pip.install",
-            "severity": "info",
-            "message": "Installed mcp, bm25s, flashrank.",
-            "phase": "apply",
-        }
-    )
-
-    # Register in .vscode/mcp.json
-    mcp_path = root / ".vscode" / "mcp.json"
-    expected_entry = {
-        "command": python_exe,
-        "args": [script_path],
-    }
-    return _register_mcp_entry(root, mcp_path, "monorepo-docs-search", expected_entry, result, dry_run)
+    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
 
 
 # ── Playwright MCP ───────────────────────────────────────────────────────
@@ -931,27 +1000,13 @@ def install_playwright_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     Requires Playwright browsers to be installed (npx playwright install chromium).
     """
-    result = configure_result(
-        "InstallPlaywrightMCP", dry_run, write_enabled=not dry_run
+    return _install_mcp(
+        root,
+        "InstallPlaywrightMCP",
+        "playwright",
+        {"command": "npx", "args": ["-y", "@playwright/mcp@latest"]},
+        dry_run,
     )
-    mcp_path = root / ".vscode" / "mcp.json"
-    expected_entry = {
-        "command": "npx",
-        "args": ["-y", "@playwright/mcp@latest"],
-    }
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "playwright",
-                "severity": "info",
-                "message": "Would register playwright MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "playwright", expected_entry, result, dry_run)
 
 
 # ── Grafana MCP ──────────────────────────────────────────────────────────
@@ -963,55 +1018,35 @@ def install_grafana_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Reads GRAFANA_SERVICE_ACCOUNT_TOKEN from infra/monitoring/variables.env.
     Requires a running Grafana instance at localhost:3000 or configured URL.
     """
-    result = configure_result(
-        "InstallGrafanaMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read grafana env vars
     monitoring_env = root / "infra" / "monitoring" / "variables.env"
     grafana_token = ""
-    grafana_url = "http://localhost:3000"
+    # The lab publishes Grafana on host port 3001 (container port 3000),
+    # so the default must be 3001 — not 3000, which is Gitea's port.
+    grafana_url = "http://localhost:3001"
     if monitoring_env.exists():
         env_vars = read_env_file(monitoring_env)
         grafana_token = env_vars.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
-        grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3000")
+        grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3001")
 
+    warnings: list[dict[str, str]] = []
     if not grafana_token or "replace-with" in grafana_token:
-        result["actions"].append(
+        warnings.append(
             {
                 "path": "infra/monitoring/variables.env",
                 "key": "grafana.token",
-                "severity": "warning",
                 "message": "GRAFANA_SERVICE_ACCOUNT_TOKEN not configured. Registering server config without token placeholder.",
-                "phase": "audit",
             }
         )
 
     expected_entry: dict[str, Any] = {
         "command": "uvx",
         "args": ["mcp-grafana"],
-    }
-    env_dict: dict[str, str] = {
-        "GRAFANA_URL": grafana_url,
+        "env": {"GRAFANA_URL": grafana_url},
     }
     if grafana_token and "replace-with" not in grafana_token:
-        env_dict["GRAFANA_SERVICE_ACCOUNT_TOKEN"] = grafana_token
-    expected_entry["env"] = env_dict
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "grafana",
-                "severity": "info",
-                "message": "Would register grafana MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "grafana", expected_entry, result, dry_run)
+        expected_entry["env"]["GRAFANA_SERVICE_ACCOUNT_TOKEN"] = grafana_token
+    return _install_mcp(root, "InstallGrafanaMCP", "grafana", expected_entry, dry_run, warnings)
 
 
 # ── Kubernetes MCP ───────────────────────────────────────────────────────
@@ -1023,11 +1058,6 @@ def install_k8s_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Reads KUBECONFIG env var or defaults to ~/.kube/config.
     Requires a running Kubernetes cluster (e.g. Docker Desktop K8s).
     """
-    result = configure_result(
-        "InstallK8sMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Determine kubeconfig path
     kubeconfig = os.environ.get("KUBECONFIG", "")
     if not kubeconfig:
@@ -1039,99 +1069,204 @@ def install_k8s_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "command": "npx",
         "args": ["-y", "kubernetes-mcp-server@latest"],
     }
+    warnings: list[dict[str, str]] = []
     if kubeconfig:
         expected_entry["env"] = {"KUBECONFIG": kubeconfig}
-
-    if not kubeconfig:
-        result["actions"].append(
+    else:
+        warnings.append(
             {
                 "path": "kubeconfig",
                 "key": "k8s.kubeconfig",
-                "severity": "warning",
                 "message": "No kubeconfig found. K8s MCP will use default kubectl context (might fail if no cluster is configured).",
-                "phase": "audit",
             }
         )
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "kubernetes",
-                "severity": "info",
-                "message": "Would register kubernetes MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "kubernetes", expected_entry, result, dry_run)
+    return _install_mcp(root, "InstallK8sMCP", "kubernetes", expected_entry, dry_run, warnings)
 
 
 # ── Gitea MCP ────────────────────────────────────────────────────────────
 
 
-def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Register the Gitea MCP server in .vscode/mcp.json.
+GITEA_MCP_PORT = 8123
+GITEA_MCP_CONTAINER = "agentic-gitea-mcp"
+GITEA_MCP_URL = f"http://localhost:{GITEA_MCP_PORT}/mcp"
 
-    Reads Gitea base URL and API token from .codex/client-tools.local.json.
+
+def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the Gitea MCP server in .vscode/mcp.json and Cline settings.
+
+    The Gitea MCP runs as ONE shared HTTP server in Docker (service
+    ``gitea-mcp`` in infra/gitea/compose.yml, container ``agentic-gitea-mcp``)
+    exposed at :data:`GITEA_MCP_URL`. Every MCP client — VS Code, Cline, or any
+    MCP-compatible CLI — connects to the same instance with a Bearer header, so
+    at most one gitea-mcp container exists instead of one per client. This step
+    is idempotent: it syncs the API token to infra/gitea/mcp.env (and
+    infra/mcp.env for compose) and recreates the container only when the token
+    changed or the container is missing.
+
+    Reads Gitea base URL and API token from .template/client-tools.local.json.
     Requires a running Gitea instance and a valid API token (generated by
     generate_gitea_api_token or provision_lab_users).
     """
-    result = configure_result(
-        "InstallGiteaMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read gitea credentials from client-tools.local.json
-    client_path = root / ".codex" / "client-tools.local.json"
-    gitea_url = "http://localhost:3000"
+    client_path = root / ".template" / "client-tools.local.json"
     gitea_token = ""
     if client_path.exists():
         client = read_json(client_path, optional=True)
         if client:
             gitea_section = client.get("gitea", {})
-            gitea_url = str(gitea_section.get("baseUrl", "http://localhost:3000")).rstrip("/")
             gitea_token = gitea_section.get("apiToken", "")
 
+    warnings: list[dict[str, str]] = []
     if not gitea_token or "replace-with" in gitea_token:
-        result["actions"].append(
+        warnings.append(
             {
-                "path": ".codex/client-tools.local.json",
+                "path": ".template/client-tools.local.json",
                 "key": "gitea.token",
-                "severity": "warning",
                 "message": "Gitea API token not configured. Run provision_lab_users or generate_gitea_api_token first.",
-                "phase": "audit",
             }
         )
 
+    # Single shared HTTP server — one container serves every MCP client.
     expected_entry: dict[str, Any] = {
-        "command": "docker",
-        "args": [
-            "run",
-            "--rm",
-            "-i",
-            "docker.gitea.com/gitea-mcp-server",
-            "--host",
-            gitea_url,
-        ],
+        "type": "http",
+        "url": GITEA_MCP_URL,
     }
     if gitea_token and "replace-with" not in gitea_token:
-        expected_entry["env"] = {"GITEA_ACCESS_TOKEN": gitea_token}
+        expected_entry["headers"] = {"Authorization": f"Bearer {gitea_token}"}
+
+    result = _install_mcp(
+        root, "InstallGiteaMCP", "gitea", expected_entry, dry_run, warnings
+    )
+    _sync_gitea_mcp_container(root, gitea_token, result, dry_run)
+    return result
+
+
+def _container_running(name: str) -> bool:
+    """Return True when a container with the exact name is running."""
+    r = run_native(
+        ["docker", "ps", "-q", "--filter", f"name=^{name}$"], REPO_ROOT, timeout=15
+    )
+    return r["returncode"] == 0 and bool(r["stdout"])
+
+
+def _compose_up_gitea_mcp(root: Path) -> dict[str, Any]:
+    """Recreate the shared gitea-mcp service via compose (idempotent).
+
+    Mirrors the compose invocation in environment_lab._compose (same env files,
+    compose.yml, and project directory) — keep both in sync if compose
+    arguments change.
+    """
+    infra = root / "infra"
+    cmd = [
+        "docker",
+        "compose",
+        "--env-file",
+        str(infra / "openproject" / "variables.env"),
+        "--env-file",
+        str(infra / "monitoring" / "variables.env"),
+        "-f",
+        str(infra / "compose.yml"),
+        "--project-directory",
+        str(infra),
+        "up",
+        "-d",
+        "--no-deps",
+        "gitea-mcp",
+    ]
+    return run_native(cmd, root, timeout=120)
+
+
+def _sync_gitea_mcp_container(
+    root: Path, token: str, result: dict[str, Any], dry_run: bool
+) -> None:
+    """Keep mcp.env in sync and ensure the shared gitea-mcp container runs.
+
+    Idempotent: writes infra/gitea/mcp.env and infra/mcp.env (the copy compose
+    reads with project dir = infra/) only when the token changed, and recreates
+    the compose service only when the env changed or the container is missing.
+    All failures are non-fatal — surfaced as warning findings.
+    """
+    env_path = root / "infra" / "gitea" / "mcp.env"
+    compose_env_path = root / "infra" / "mcp.env"
+    value = (
+        token
+        if token and "replace-with" not in token
+        else "replace-with-gitea-api-token"
+    )
+    new_content = f"GITEA_ACCESS_TOKEN={value}\n"
+    current = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    changed = current != new_content
 
     if dry_run:
         result["actions"].append(
             {
-                "path": ".vscode/mcp.json",
-                "key": "gitea",
+                "path": "infra/gitea/mcp.env",
+                "key": "gitea-mcp.container",
                 "severity": "info",
-                "message": "Would register gitea MCP server.",
+                "message": f"Would ensure the shared gitea-mcp container ({GITEA_MCP_CONTAINER}) is running at {GITEA_MCP_URL}.",
                 "phase": "apply",
             }
         )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "gitea", expected_entry, result, dry_run)
+        return
+
+    if changed:
+        try:
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(new_content, encoding="utf-8")
+            compose_env_path.parent.mkdir(parents=True, exist_ok=True)
+            compose_env_path.write_text(new_content, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": "infra/gitea/mcp.env",
+                    "key": "gitea-mcp.env",
+                    "severity": "info",
+                    "message": "Synced GITEA_ACCESS_TOKEN to infra/gitea/mcp.env and infra/mcp.env.",
+                    "phase": "apply",
+                }
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "infra/gitea/mcp.env",
+                "gitea-mcp.env",
+                f"Could not write mcp.env: {ex}",
+                "warning",
+                "apply",
+            )
+            return
+
+    if not changed and _container_running(GITEA_MCP_CONTAINER):
+        result["actions"].append(
+            {
+                "path": "docker/container/" + GITEA_MCP_CONTAINER,
+                "key": "gitea-mcp.up",
+                "severity": "info",
+                "message": "Shared gitea-mcp container already running (no change needed).",
+                "phase": "audit",
+            }
+        )
+        return
+
+    up = _compose_up_gitea_mcp(root)
+    if up["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "docker/container/" + GITEA_MCP_CONTAINER,
+                "key": "gitea-mcp.up",
+                "severity": "info",
+                "message": f"Ensured shared gitea-mcp container is running at {GITEA_MCP_URL}.",
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "docker/container/" + GITEA_MCP_CONTAINER,
+            "gitea-mcp.up",
+            f"Could not start shared gitea-mcp container: {up['stderr'][:200] or up['stdout'][:200]}",
+            "warning",
+            "apply",
+        )
 
 
 # ── OpenProject MCP ──────────────────────────────────────────────────────
@@ -1143,11 +1278,6 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
     Reads OPENPROJECT_URL and OPENPROJECT_API_KEY from infra/openproject/variables.env.
     Requires a running OpenProject instance at the configured URL.
     """
-    result = configure_result(
-        "InstallOpenProjectMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read openproject env vars
     op_env_path = root / "infra" / "openproject" / "variables.env"
     op_url = "http://localhost:8080"
@@ -1157,61 +1287,119 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
         op_url = env_vars.get("OPENPROJECT_URL", "http://localhost:8080")
         op_api_key = env_vars.get("OPENPROJECT_API_KEY", "")
 
+    warnings: list[dict[str, str]] = []
     if not op_api_key or "replace-with" in op_api_key:
-        result["actions"].append(
+        warnings.append(
             {
                 "path": "infra/openproject/variables.env",
                 "key": "openproject.apikey",
-                "severity": "warning",
                 "message": "OPENPROJECT_API_KEY not configured. Registering server without API key.",
-                "phase": "audit",
             }
         )
-
-    env_dict: dict[str, str] = {
-        "OPENPROJECT_URL": op_url,
-    }
-    if op_api_key and "replace-with" not in op_api_key:
-        env_dict["OPENPROJECT_API_KEY"] = op_api_key
 
     expected_entry: dict[str, Any] = {
         "command": "npx",
         "args": ["-y", "openproject-mcp"],
     }
-    if env_dict:
-        expected_entry["env"] = env_dict
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "openproject",
-                "severity": "info",
-                "message": "Would register openproject MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "openproject", expected_entry, result, dry_run)
+    env_dict: dict[str, str] = {"OPENPROJECT_URL": op_url}
+    if op_api_key and "replace-with" not in op_api_key:
+        env_dict["OPENPROJECT_API_KEY"] = op_api_key
+    expected_entry["env"] = env_dict
+    return _install_mcp(root, "InstallOpenProjectMCP", "openproject", expected_entry, dry_run, warnings)
 
 
 # ── Ensure MCP servers ───────────────────────────────────────────────────
 
+# MCP server names that are never managed by this installer and are almost
+# certainly leftover junk from manual experiments (observed in the field:
+# "new-server", "test-server", "newserver"). ensure_mcp_servers prunes these
+# when prune_junk is enabled (default). Exact-name match only — arbitrary
+# user-added servers (e.g. codebase-memory-mcp) are never touched.
+_MCP_JUNK_SERVER_NAMES: frozenset[str] = frozenset(
+    {"new-server", "test-server", "newserver"}
+)
 
-def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Install all non-optional MCP servers: monorepo-docs-search, codebase-memory-mcp, playwright.
 
-    OpenProject and Grafana MCPs are not installed automatically by this function
-    because they require service credentials. Use the individual install_*_mcp
-    functions when the services are provisioned.
+def _prune_junk_mcp_servers(
+    root: Path, result: dict[str, Any], dry_run: bool
+) -> None:
+    """Remove known-junk MCP server entries from every managed settings file.
+
+    Applies to the repo's .vscode/mcp.json and all existing Cline settings
+    files (via ``_cline_settings_targets``). Only exact matches of
+    ``_MCP_JUNK_SERVER_NAMES`` are removed; real unknown servers the user added
+    are preserved. Each removal is recorded as an action (dry-run: a "would
+    remove" action, no writes).
+    """
+    files: list[Path] = []
+    vscode = root / ".vscode" / "mcp.json"
+    if vscode.exists():
+        files.append(vscode)
+    files.extend(_cline_settings_targets())
+
+    for path in files:
+        try:
+            data = read_json(path, optional=True)
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            continue
+        servers_key = (
+            "mcpServers" if isinstance(data.get("mcpServers"), dict) else "servers"
+        )
+        servers = data.get(servers_key)
+        if not isinstance(servers, dict):
+            continue
+        removed = [name for name in sorted(_MCP_JUNK_SERVER_NAMES) if name in servers]
+        if not removed:
+            continue
+        for name in removed:
+            del servers[name]
+        if not dry_run:
+            write_json(path, data)
+        for name in removed:
+            result["actions"].append(
+                {
+                    "path": str(path),
+                    "key": f"prune.{name}",
+                    "severity": "info",
+                    "message": (
+                        f"Would remove junk MCP server entry '{name}' from "
+                        f"{path.name}."
+                        if dry_run
+                        else f"Removed junk MCP server entry '{name}' from {path.name}."
+                    ),
+                    "phase": "apply",
+                }
+            )
+
+
+def ensure_mcp_servers(
+    root: Path, dry_run: bool = False, prune_junk: bool = True
+) -> dict[str, Any]:
+    """Register all MCP servers in .vscode/mcp.json.
+
+    Checks every install_*_mcp target: playwright, grafana, kubernetes, gitea,
+    and openproject. Service MCPs (grafana/gitea/openproject) read credentials
+    from their config files and register the server entry even when credentials
+    are missing — the installer reports a warning action so the gap is visible
+    without failing the aggregate result.
+
+    When ``prune_junk`` (default True) is set, known-junk MCP entries such as
+    "new-server"/"test-server"/"newserver" are removed from every managed
+    settings file so stale experimental servers are cleaned automatically.
+    Pass ``--prune-junk false`` to keep them. Note: full-setup stage 3 calls
+    this function directly and always prunes (no flag); the opt-out is
+    available on ``tool-installer ensure-mcp-servers --prune-junk false``.
     """
     result = configure_result("EnsureMCPServers", dry_run, write_enabled=not dry_run)
 
     results = [
-        install_codebase_memory(root, dry_run),
-        install_monorepo_docs_search(root, dry_run),
         install_playwright_mcp(root, dry_run),
+        install_grafana_mcp(root, dry_run),
+        install_k8s_mcp(root, dry_run),
+        install_gitea_mcp(root, dry_run),
+        install_openproject_mcp(root, dry_run),
     ]
     for r in results:
         for action in r.get("actions", []):
@@ -1219,87 +1407,12 @@ def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
         for finding in r.get("findings", []):
             result["findings"].append(finding)
 
+    if prune_junk:
+        _prune_junk_mcp_servers(root, result, dry_run)
+
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result
-
-
-# ── Ensure codebase memory ───────────────────────────────────────────────
-
-
-def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure .codex/memory/ files exist and codebase-memory-mcp is configured."""
-    result = configure_result(
-        "EnsureCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    memory_dir = root / ".codex" / "memory"
-    if not memory_dir.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Would create .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            memory_dir.mkdir(parents=True, exist_ok=True)
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Created .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-    seed_files = {
-        ".codex/memory/memory_summary.md": "# Memory Summary\n\nNo consumer project memories recorded yet.\n",
-        ".codex/memory/MEMORY.md": "# Repository Memory Index\n\n- `memory_summary.md`: compact startup context.\n"
-        "- `retrieval-policy.md`: memory read/write rules.\n",
-        ".codex/memory/retrieval-policy.md": "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
-        "Verify against current files and live tools before acting.\n",
-    }
-    for relative, content in seed_files.items():
-        path = root / relative
-        if path.exists():
-            result["actions"].append(
-                {
-                    "path": relative,
-                    "key": "exists",
-                    "severity": "info",
-                    "message": "Memory seed file already exists.",
-                    "phase": "audit",
-                }
-            )
-            continue
-        if not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-        result["actions"].append(
-            {
-                "path": relative,
-                "key": "created",
-                "severity": "info",
-                "message": "Created memory seed file.",
-                "phase": "apply",
-            }
-        )
-    # Also ensure codebase-memory-mcp is configured in .vscode/mcp.json
-    mcp_result = install_codebase_memory(root, dry_run)
-    for action in mcp_result.get("actions", []):
-        result["actions"].append(action)
-    for finding in mcp_result.get("findings", []):
-        result["findings"].append(finding)
-    if not mcp_result.get("valid", True):
-        result["valid"] = False
-    else:
-        result["valid"] = not any(
-            item.get("severity") == "error" for item in result["findings"]
-        )
     return result
 
 
@@ -1307,23 +1420,23 @@ def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Validate that every skill in .codex/skills/manifest.json maps to an existing SKILL.md on disk.
+    """Validate that every skill in .agents/skills/manifest.json maps to an existing SKILL.md on disk.
 
     Reads the manifest categories, collects all skill paths, and checks each one
-    exists relative to the .codex/skills/ directory. Reports missing skills as errors.
+    exists relative to the .agents/skills/ directory. Reports missing skills as errors.
     """
     result = configure_result(
         "ValidateManifest", dry_run, write_enabled=False
     )
-    manifest_path = root / ".codex" / "skills" / "manifest.json"
-    skills_dir = root / ".codex" / "skills"
+    manifest_path = root / ".agents" / "skills" / "manifest.json"
+    skills_dir = root / ".agents" / "skills"
 
     if not manifest_path.exists():
         add_bucket_item(
             result["findings"],
-            ".codex/skills/manifest.json",
+            ".agents/skills/manifest.json",
             "missing.manifest",
-            "Manifest file not found at .codex/skills/manifest.json.",
+            "Manifest file not found at .agents/skills/manifest.json.",
             "error",
             "pre-start",
         )
@@ -1335,7 +1448,7 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
     except Exception as ex:
         add_bucket_item(
             result["findings"],
-            ".codex/skills/manifest.json",
+            ".agents/skills/manifest.json",
             "parse.error",
             f"Could not parse manifest JSON: {ex}",
             "error",
@@ -1348,7 +1461,7 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if not isinstance(categories, dict):
         add_bucket_item(
             result["findings"],
-            ".codex/skills/manifest.json",
+            ".agents/skills/manifest.json",
             "invalid.categories",
             "'categories' key must be a JSON object.",
             "error",
@@ -1406,9 +1519,52 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 # ── Ensure quality tools ─────────────────────────────────────────────────
 
+# Test framework → coverage-tool probe command. Normalized keys come from
+# stack_tests._normalize_framework (pytest for Python, vitest/jest for JS/TS,
+# dotnet for .NET — xunit/nunit/mstest normalize to dotnet).
+_FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
+    "pytest": (["pytest", "--version"], "pytest"),
+    "vitest": (native_command("npx") + ["vitest", "--version"], "vitest"),
+    "jest": (native_command("npx") + ["jest", "--version"], "jest"),
+    "dotnet": (["dotnet", "--version"], "dotnet"),
+}
+
+
+def _coverage_probe_commands(
+    root: Path,
+) -> tuple[list[tuple[list[str], str]], str | None]:
+    """Coverage-tool probe commands driven by stack.testFrameworks.
+
+    Reads the configured test frameworks from the project profile and returns
+    the matching probe commands (normalized via stack_tests so .NET variants
+    collapse to dotnet) plus a skip reason when nothing should be probed. The
+    stack is a user decision — with no stack configured, or only unmapped
+    frameworks, nothing is probed (the template never assumes a default
+    toolchain).
+    """
+    from ._shared import load_project_profile
+    from .stack_tests import _normalize_framework
+
+    profile = load_project_profile(root)
+    frameworks = (profile.get("stack") or {}).get("testFrameworks") or []
+    if not frameworks:
+        return [], "no stack.testFrameworks configured — never assume a stack"
+    probes: list[tuple[list[str], str]] = []
+    unmapped: list[str] = []
+    for fw in frameworks:
+        key = _normalize_framework(fw)
+        entry = _FRAMEWORK_COVERAGE_PROBES.get(key)
+        if entry and entry not in probes:
+            probes.append(entry)
+        elif not entry:
+            unmapped.append(str(fw))
+    if probes:
+        return probes, None
+    return [], f"no coverage probe mapped for testFrameworks: {', '.join(unmapped)}"
+
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure quality tools are installed: lefthook, gitleaks, trivy, trunk, coverage."""
+    """Ensure quality tools are installed: lefthook, gitleaks, trivy, kustomize, trunk, coverage."""
     result = configure_result("EnsureQualityTools", dry_run, write_enabled=not dry_run)
     # Lefthook
     lf_result = install_lefthook(root, dry_run)
@@ -1490,10 +1646,33 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "audit",
             }
         )
+    # Kustomize (k8s overlay rendering) — auto-install like lefthook: the
+    # validate-k8s-overlays gate (k8s_validate.py) needs the binary locally to
+    # render the dev/qa/prod overlays. Pinned to the CI image version. No
+    # separate PATH probe here: install_kustomize verifies via the resolved
+    # full path (user-local bin may not be on PATH), matching lefthook.
+    kz_result = install_kustomize(root, dry_run)
+    for action in kz_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in kz_result.get("findings", []):
+        result["findings"].append(finding)
+    if not kz_result.get("valid", True):
+        result["warnings"].append(
+            {
+                "path": "kustomize",
+                "key": "install",
+                "severity": "warning",
+                "message": "Kustomize installation had issues; continuing with other checks.",
+                "phase": "apply",
+            }
+        )
     # Trunk (formatting) (skip in dry-run; resolves via npx from node_modules/.bin)
     if not dry_run:
+        # First-run npx must download the launcher + trunk binary (large), so
+        # 30s times out and produces a false "not installed" warning. 120s
+        # covers cold downloads; warm runs resolve from the npx cache fast.
         trunk_check = run_native(
-            ["npx", "--yes", "trunk", "--version"], root, timeout=30
+            native_command("npx") + ["--yes", "trunk", "--version"], root, timeout=120
         )
         if trunk_check["returncode"] == 0:
             result["actions"].append(
@@ -1506,14 +1685,49 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 }
             )
         else:
-            add_bucket_item(
-                result["findings"],
-                "trunk",
-                "missing",
-                "Trunk is not installed. Install via: npm install -D @trunkio/launcher",
-                "warning",
-                "pre-start",
+            # Auto-install the launcher into gitignored node_modules so the
+            # lefthook fmt/check hooks resolve trunk without prompting. The
+            # template is deliberately package.json-free (tests assert no
+            # package.json is generated), so install --no-save + --no-package-lock
+            # to avoid creating either file.
+            install = run_native(
+                native_command("npm")
+                + [
+                    "install",
+                    "--no-save",
+                    "--no-package-lock",
+                    "--no-audit",
+                    "--no-fund",
+                    "@trunkio/launcher",
+                ],
+                root,
+                timeout=300,
             )
+            recheck = run_native(
+                native_command("npx") + ["--yes", "trunk", "--version"],
+                root,
+                timeout=30,
+            )
+            if install["returncode"] == 0 and recheck["returncode"] == 0:
+                result["actions"].append(
+                    {
+                        "path": "trunk",
+                        "key": "install",
+                        "severity": "info",
+                        "message": "Trunk launcher auto-installed into node_modules (gitignored) — lefthook fmt/check hooks will resolve it.",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "trunk",
+                    "missing",
+                    "Trunk is not installed. Install via: npm install -D @trunkio/launcher"
+                    + " (auto-install attempted but failed — check npm registry access).",
+                    "warning",
+                    "pre-start",
+                )
     else:
         result["actions"].append(
             {
@@ -1524,13 +1738,23 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "audit",
             }
         )
-    # Coverage tool (dotnet or pytest or jest depending on project; skip in dry-run)
+    # Coverage tool — stack-driven: probe only the frameworks declared in
+    # stack.testFrameworks (pytest/vitest/jest/dotnet). With no stack
+    # configured (or only unmapped frameworks) nothing is probed — the stack
+    # is a user decision and must never be assumed. Skip in dry-run.
+    probes, probe_reason = _coverage_probe_commands(root)
     if not dry_run:
-        for tool_cmd, tool_name in [
-            (["dotnet", "--version"], "dotnet"),
-            (["pytest", "--version"], "pytest"),
-            (["npx", "jest", "--version"], "jest"),
-        ]:
+        if not probes:
+            result["actions"].append(
+                {
+                    "path": "coverage",
+                    "key": "check.skipped",
+                    "severity": "info",
+                    "message": f"Coverage tool probe skipped: {probe_reason}.",
+                    "phase": "audit",
+                }
+            )
+        for tool_cmd, tool_name in probes:
             check = run_native(tool_cmd, root, timeout=10)
             if check["returncode"] == 0:
                 result["actions"].append(
@@ -1559,10 +1783,325 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
+# ── Stack toolchain (verify + guided install) ───────────────────
+
+# Normalized stack signal → runtime key. Signals come from stack.languages,
+# stack.frameworks, stack.testFrameworks, and the frontend/backend/database
+# values in the project profile. Each row is an example mapping — the stack
+# is always a user decision, never assumed.
+_STACK_SIGNAL_ALIASES: dict[str, str] = {
+    # Languages
+    "python": "python",
+    "javascript": "node",
+    "typescript": "node",
+    "c#": "dotnet",
+    "csharp": "dotnet",
+    "go": "go",
+    "golang": "go",
+    "java": "java",
+    "ruby": "ruby",
+    "rust": "rust",
+    "php": "php",
+    # Frontend / backend frameworks
+    "react": "node",
+    "vue": "node",
+    "angular": "node",
+    "svelte": "node",
+    "next": "node",
+    "nuxt": "node",
+    "node": "node",
+    "express": "node",
+    "fastapi": "python",
+    "django": "python",
+    "flask": "python",
+    "asp.net": "dotnet",
+    "asp.net core": "dotnet",
+    "asp.net mvc": "dotnet",
+    "asp.net razor": "dotnet",
+    "aspnetcore": "dotnet",
+    "blazor": "dotnet",
+    "razor": "dotnet",
+    "spring": "java",
+    "maven": "java",
+    "gradle": "java",
+    "rails": "ruby",
+    "laravel": "php",
+    # Test frameworks (normalized keys come from stack_tests)
+    "pytest": "python",
+    "vitest": "node",
+    "jest": "node",
+    "dotnet": "dotnet",
+    "xunit": "dotnet",
+    "nunit": "dotnet",
+    "mstest": "dotnet",
+    "xunit.net": "dotnet",
+    "xunit.v3": "dotnet",
+    "nunit3": "dotnet",
+}
+
+# Runtime details: probe commands (first success wins), per-platform install
+# guidance, and the test/coverage tooling that runtime provides. The installer
+# only VERIFIES and prints the exact install command for missing tools — it
+# never installs compilers/SDKs automatically.
+_STACK_RUNTIMES: dict[str, dict[str, Any]] = {
+    "python": {
+        "label": "Python",
+        "probes": (["python3", "--version"], ["python", "--version"]),
+        "install": {
+            "windows": "winget install Python.Python.3.12",
+            "darwin": "brew install python",
+            "linux": "sudo apt install -y python3 python3-pip",
+        },
+        "tooling": "test: pytest · coverage: pytest-cov",
+    },
+    "node": {
+        "label": "Node.js",
+        "probes": (["node", "--version"],),
+        "install": {
+            "windows": "winget install OpenJS.NodeJS.LTS",
+            "darwin": "brew install node",
+            "linux": "sudo apt install -y nodejs npm",
+        },
+        "tooling": "test: vitest/jest (npm ci installs from the lockfile)",
+    },
+    "dotnet": {
+        "label": ".NET SDK",
+        "probes": (["dotnet", "--version"],),
+        "install": {
+            "windows": "winget install Microsoft.DotNet.SDK.8",
+            "darwin": "brew install --cask dotnet-sdk",
+            "linux": "sudo apt install -y dotnet-sdk-8.0",
+        },
+        "tooling": "test: xunit/nunit/mstest via `dotnet test` · coverage: coverlet.msbuild",
+    },
+    "go": {
+        "label": "Go",
+        "probes": (["go", "version"],),
+        "install": {
+            "windows": "winget install GoLang.Go",
+            "darwin": "brew install go",
+            "linux": "sudo apt install -y golang-go",
+        },
+        "tooling": "test/coverage: `go test -cover`",
+    },
+    "java": {
+        "label": "Java (JDK + Maven)",
+        "probes": (["java", "-version"], ["mvn", "-version"]),
+        "install": {
+            "windows": "winget install Microsoft.OpenJDK.21 && winget install Apache.Maven",
+            "darwin": "brew install openjdk maven",
+            "linux": "sudo apt install -y openjdk-21-jdk maven",
+        },
+        "tooling": "test: JUnit · coverage: JaCoCo",
+    },
+    "ruby": {
+        "label": "Ruby",
+        "probes": (["ruby", "--version"],),
+        "install": {
+            "windows": "winget install RubyInstallerTeam.Ruby",
+            "darwin": "brew install ruby",
+            "linux": "sudo apt install -y ruby-full",
+        },
+        "tooling": "test: RSpec · coverage: SimpleCov",
+    },
+    "rust": {
+        "label": "Rust",
+        "probes": (["rustc", "--version"],),
+        "install": {
+            "windows": "winget install Rustlang.Rustup",
+            "darwin": "brew install rustup-init",
+            "linux": "sudo apt install -y rustc cargo",
+        },
+        "tooling": "test: cargo test · coverage: tarpaulin",
+    },
+    "php": {
+        "label": "PHP",
+        "probes": (["php", "--version"],),
+        "install": {
+            "windows": "winget install PHP.PHP",
+            "darwin": "brew install php",
+            "linux": "sudo apt install -y php-cli",
+        },
+        "tooling": "test: PHPUnit · coverage: Xdebug",
+    },
+}
+
+
+def _stack_configured(stack: dict[str, Any]) -> bool:
+    """True when the profile stack carries any actual stack signal.
+
+    The template's default profile has every domain at ``applies: false`` —
+    that is "no stack", not a configured stack.
+    """
+    domains = [stack.get(d) for d in ("frontend", "backend", "database")]
+    any_applies = any(
+        isinstance(entry, dict) and entry.get("applies") is True for entry in domains
+    )
+    return bool(
+        any_applies
+        or stack.get("languages")
+        or stack.get("frameworks")
+        or stack.get("testFrameworks")
+    )
+
+
+def _stack_runtime_keys(stack: dict[str, Any]) -> list[str]:
+    """Derive the deduplicated runtimes a configured stack requires.
+
+    Collects signals from stack.testFrameworks (normalized via stack_tests),
+    the frontend/backend/database values, and stack.languages/frameworks, then
+    maps each to a runtime via _STACK_SIGNAL_ALIASES. Returns [] when nothing
+    is derivable — the caller reports a skip instead of assuming a stack.
+    """
+    from .stack_tests import _normalize_framework
+
+    keys: list[str] = []
+    for fw in stack.get("testFrameworks") or []:
+        keys.append(_STACK_SIGNAL_ALIASES.get(_normalize_framework(fw), ""))
+    signals: list[str] = []
+    for domain in ("frontend", "backend", "database"):
+        entry = stack.get(domain)
+        if isinstance(entry, dict) and entry.get("applies") is True:
+            signals.append(str(entry.get("value", "")).lower().strip())
+    signals += [str(v).lower().strip() for v in (stack.get("languages") or [])]
+    signals += [str(v).lower().strip() for v in (stack.get("frameworks") or [])]
+    for signal in signals:
+        if signal:
+            keys.append(_STACK_SIGNAL_ALIASES.get(signal, ""))
+    return sorted({key for key in keys if key})
+
+
+def _stack_unmapped_signals(stack: dict[str, Any]) -> list[str]:
+    """Profile stack signals that carry no runtime mapping.
+
+    Used to report configured-but-unknown stack values instead of silently
+    passing (the stack is the user's decision — an unmapped value is a gap the
+    user should see, not hide).
+    """
+    from .stack_tests import _normalize_framework
+
+    unmapped: list[str] = []
+    for fw in stack.get("testFrameworks") or []:
+        key = _normalize_framework(fw)
+        if key and key not in _STACK_SIGNAL_ALIASES:
+            unmapped.append(str(fw))
+    signals: list[str] = []
+    for domain in ("frontend", "backend", "database"):
+        entry = stack.get(domain)
+        if isinstance(entry, dict) and entry.get("applies") is True:
+            signals.append(str(entry.get("value", "")).lower().strip())
+    signals += [str(v).lower().strip() for v in (stack.get("languages") or [])]
+    signals += [str(v).lower().strip() for v in (stack.get("frameworks") or [])]
+    for signal in signals:
+        if signal and signal not in _STACK_SIGNAL_ALIASES:
+            unmapped.append(signal)
+    return sorted(set(unmapped))
+
+
+def ensure_stack_toolchain(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Verify the toolchain the selected stack needs (verify + guided install).
+
+    Derives the required runtimes (compilers, test runners, coverage tools)
+    from the configured stack and probes each one. Missing tools are reported
+    as warning findings with the exact install command for the host OS —
+    nothing is installed automatically. With no stack configured this reports
+    a skip (the stack is a user decision and is never assumed).
+    """
+    result = configure_result("EnsureStackToolchain", dry_run, write_enabled=False)
+    from ._shared import load_project_profile
+
+    profile = load_project_profile(root)
+    stack = profile.get("stack") or {}
+    runtimes = _stack_runtime_keys(stack)
+    if not runtimes:
+        if not _stack_configured(stack):
+            result["actions"].append(
+                {
+                    "path": "stack-toolchain",
+                    "key": "check.skipped",
+                    "severity": "info",
+                    "message": (
+                        "No stack configured — stack toolchain check skipped "
+                        "(never assume a tech stack)."
+                    ),
+                    "phase": "audit",
+                }
+            )
+        else:
+            # A configured stack that maps to no runtimes is a config gap —
+            # surface it as a warning (stack-tests fails loudly for unmapped
+            # frameworks; this is the verify-and-guide analogue).
+            unmapped = _stack_unmapped_signals(stack)
+            add_bucket_item(
+                result["findings"],
+                "stack-toolchain",
+                "unmapped",
+                "Configured stack maps to no known runtimes — review stack "
+                f"values: {', '.join(unmapped) or '(empty)'}. Add the runtime "
+                "to _STACK_SIGNAL_ALIASES/_STACK_RUNTIMES or fix the profile.",
+                "warning",
+                "pre-start",
+            )
+        result["valid"] = not any(
+            item.get("severity") == "error" for item in result["findings"]
+        )
+        return result
+
+    for key in runtimes:
+        runtime = _STACK_RUNTIMES[key]
+        label = runtime["label"]
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": key,
+                    "key": "probe",
+                    "severity": "info",
+                    "message": f"Would probe {label} ({' '.join(runtime['probes'][0])}).",
+                    "phase": "audit",
+                }
+            )
+            continue
+        check: dict[str, Any] = {"returncode": 1}
+        for probe in runtime["probes"]:
+            check = run_native(probe, root, timeout=15)
+            if check["returncode"] == 0:
+                break
+        if check["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": key,
+                    "key": "check",
+                    "severity": "info",
+                    "message": (
+                        f"{label} available: {check['stdout'][:60]} "
+                        f"({runtime['tooling']})."
+                    ),
+                    "phase": "audit",
+                }
+            )
+        else:
+            guidance = runtime["install"].get(_tool_platform() or "") or (
+                "see the official installer for your OS"
+            )
+            add_bucket_item(
+                result["findings"],
+                key,
+                "missing",
+                f"{label} not found — install it to build/test the selected "
+                f"stack: {guidance} ({runtime['tooling']}).",
+                "warning",
+                "pre-start",
+            )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
 # ── Skill sources config ────────────────────────────────────────────────
 
-_SKILL_SOURCES_CONFIG = ".codex/skill-sources.json"
-_SKILL_SOURCES_EXAMPLE = ".codex/skill-sources.example.json"
+_SKILL_SOURCES_CONFIG = ".template/skill-sources.json"
+_SKILL_SOURCES_EXAMPLE = ".template/skill-sources.example.json"
 _SKILL_SOURCES_DEFAULT: list[dict[str, str]] = [
     {
         "name": "awesome-copilot",
@@ -1582,7 +2121,7 @@ _SKILL_SOURCES_DEFAULT: list[dict[str, str]] = [
 
 
 def _load_skill_sources(root: Path) -> list[dict[str, str]]:
-    """Load skill sources from .codex/skill-sources.json, falling back to example then defaults."""
+    """Load skill sources from .template/skill-sources.json, falling back to example then defaults."""
     config_path = root / _SKILL_SOURCES_CONFIG
     if config_path.exists():
         config = read_json(config_path, optional=False)
@@ -1603,7 +2142,7 @@ def list_available_skills(
 ) -> dict[str, Any]:
     """List available skills from all configured sources.
 
-    Reads .codex/skill-sources.json, fetches subdirectories under each source's
+    Reads .template/skill-sources.json, fetches subdirectories under each source's
     skills path from GitHub Contents API, and returns the list of discoverable skills.
     """
     import json as _json
@@ -1619,7 +2158,7 @@ def list_available_skills(
         return {
             "mode": "ListAvailableSkills",
             "valid": False,
-            "errors": ["No skill sources configured. Create .codex/skill-sources.json."],
+            "errors": ["No skill sources configured. Create .template/skill-sources.json."],
         }
 
     if dry_run:
@@ -1743,13 +2282,13 @@ def install_skill_from_github(
     """Install a skill folder from GitHub by reading raw content (no cloning).
 
     Args:
-        root: Repository root (skills go under .codex/skills/<skill_name>/)
+        root: Repository root (skills go under .agents/skills/<skill_name>/)
         repo: GitHub repo in "owner/repo" format (overridden by --source if provided)
         skill_path: Path within the repo to the skill directory (overridden by --source if provided)
-        skill_name: Local name for the skill directory under .codex/skills/
+        skill_name: Local name for the skill directory under .agents/skills/
         branch: Git branch to fetch from (default "main")
         github_token: Optional GitHub token for authenticated requests (higher rate limit)
-        source: Name of a source from .codex/skill-sources.json to look up repo/skill_path
+        source: Name of a source from .template/skill-sources.json to look up repo/skill_path
         dry_run: If True, only list what would be installed (no API calls)
 
     Returns:
@@ -1793,16 +2332,16 @@ def install_skill_from_github(
             "errors": ["Missing required option: --skill-name"],
         }
 
-    skills_target = root / ".codex" / "skills" / skill_name
+    skills_target = root / ".agents" / "skills" / skill_name
     errors: list[str] = []
 
     # ── Dry-run: report what would happen (no API calls) ──────────────
     if dry_run:
         result["actions"].append({
-            "path": f".codex/skills/{skill_name}",
+            "path": f".agents/skills/{skill_name}",
             "key": "install",
             "severity": "info",
-            "message": f"Would fetch skill from github.com/{repo}/{skill_path} (branch: {branch}) into .codex/skills/{skill_name}/ and register in manifest.json.",
+            "message": f"Would fetch skill from github.com/{repo}/{skill_path} (branch: {branch}) into .agents/skills/{skill_name}/ and register in manifest.json.",
             "phase": "apply",
         })
         result["skillName"] = skill_name
@@ -1825,7 +2364,10 @@ def install_skill_from_github(
         """Recursively list (relative_path, download_url) from GitHub Contents API."""
         items: list[tuple[str, str]] = []
         try:
-            url = f"{api_url}?ref={branch}"
+            # GitHub echoes the ?ref= query in directory entry URLs; append ref
+            # only when it is not already present to avoid "?ref=...?ref=...".
+            sep = "&" if "?" in api_url else "?"
+            url = f"{api_url}{sep}ref={branch}"
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read().decode("utf-8")
@@ -1903,7 +2445,7 @@ def install_skill_from_github(
         except Exception as ex:
             add_bucket_item(
                 result["findings"],
-                f".codex/skills/{skill_name}/{rel_path}",
+                f".agents/skills/{skill_name}/{rel_path}",
                 "download.error",
                 f"Could not download {dl_url}: {ex}",
                 "error",
@@ -1916,7 +2458,7 @@ def install_skill_from_github(
         installed.append(rel_path)
 
         result["actions"].append({
-            "path": f".codex/skills/{skill_name}/{rel_path}",
+            "path": f".agents/skills/{skill_name}/{rel_path}",
             "key": "install",
             "severity": "info",
             "message": f"Installed ({len(content)} bytes).",
@@ -1925,7 +2467,7 @@ def install_skill_from_github(
 
     if skipped:
         result["actions"].append({
-            "path": f".codex/skills/{skill_name}",
+            "path": f".agents/skills/{skill_name}",
             "key": "skip.existing",
             "severity": "info",
             "message": f"Skipped {len(skipped)} existing file(s): {', '.join(skipped[:5])}" + (
@@ -1937,7 +2479,7 @@ def install_skill_from_github(
     # ── Update manifest.json if SKILL.md was installed ─────────────────
     skill_md_installed = any(f.endswith("SKILL.md") for f, _ in files)
     if skill_md_installed:
-        manifest_path = root / ".codex" / "skills" / "manifest.json"
+        manifest_path = root / ".agents" / "skills" / "manifest.json"
         if manifest_path.exists():
             manifest = read_json(manifest_path, optional=False)
             categories = manifest.get("categories", {})
@@ -1958,7 +2500,7 @@ def install_skill_from_github(
                         skills_list.append(skill_ref)
                         write_json(manifest_path, manifest)
                         result["actions"].append({
-                            "path": ".codex/skills/manifest.json",
+                            "path": ".agents/skills/manifest.json",
                             "key": "manifest.update",
                             "severity": "info",
                             "message": f"Registered '{skill_ref}' in 'community' category.",
@@ -1977,7 +2519,7 @@ def install_skill_from_github(
             }
             write_json(manifest_path, manifest)
             result["actions"].append({
-                "path": ".codex/skills/manifest.json",
+                "path": ".agents/skills/manifest.json",
                 "key": "manifest.created",
                 "severity": "info",
                 "message": f"Created manifest.json with '{skill_name}' in 'community' category.",
@@ -2028,13 +2570,13 @@ def _install_skill_with_fallback(
     # ── Dry-run: report both paths ───────────────────────────────────
     if dry_run:
         result["actions"].append({
-            "path": f".codex/skills/{skill_name}",
+            "path": f".agents/skills/{skill_name}",
             "key": "install",
             "severity": "info",
             "message": (
                 f"Would try npx skills add first. "
                 f"Fallback: fetch from github.com/{resolved_repo}/{resolved_path} "
-                f"into .codex/skills/{skill_name}/ and register in manifest.json."
+                f"into .agents/skills/{skill_name}/ and register in manifest.json."
             ),
             "phase": "apply",
         })
@@ -2048,7 +2590,7 @@ def _install_skill_with_fallback(
         npx_result = run_native(npx_cmd, root, timeout=60)
         if npx_result["returncode"] == 0:
             result["actions"].append({
-                "path": f".codex/skills/{skill_name}",
+                "path": f".agents/skills/{skill_name}",
                 "key": "npx.skill.installed",
                 "severity": "info",
                 "message": f"Skill '{skill_name}' installed via npx skills add.",
@@ -2097,12 +2639,12 @@ def run_tool_installer(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: install-lefthook, install-codegraph, install-codebase-memory, "
-            "install-monorepo-docs-search, install-playwright-mcp, "
-            "install-grafana-mcp, install-openproject-mcp, "
-            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, "
-            "install-skill, list-skills, ensure-mcp-servers, ensure-codebase-memory, "
-            "ensure-quality-tools, install-sdd-template, update-sdd-template",
+            "Available: install-lefthook, install-kustomize, "
+            "install-playwright-mcp, install-grafana-mcp, "
+            "install-openproject-mcp, validate-manifest, install-k8s-mcp, "
+            "install-gitea-mcp, install-skill, list-skills, "
+            "ensure-mcp-servers, ensure-quality-tools, "
+            "ensure-stack-toolchain, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
         return 1
@@ -2112,29 +2654,12 @@ def run_tool_installer(args: list[str]) -> int:
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
         "install-lefthook": lambda: install_lefthook(root, dry_run),
-        "install-codegraph": lambda: install_codegraph(root, dry_run),
-        "install-codebase-memory": lambda: install_codebase_memory(root, dry_run),
-        "install-monorepo-docs-search": lambda: install_monorepo_docs_search(root, dry_run),
+        "install-kustomize": lambda: install_kustomize(root, dry_run),
         "install-playwright-mcp": lambda: install_playwright_mcp(root, dry_run),
         "install-grafana-mcp": lambda: install_grafana_mcp(root, dry_run),
         "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
         "install-gitea-mcp": lambda: install_gitea_mcp(root, dry_run),
         "install-k8s-mcp": lambda: install_k8s_mcp(root, dry_run),
-        "install-claw": lambda: install_claw_compactor(
-            root,
-            version=options.get("version"),
-            dry_run=dry_run,
-        ),
-        "install-skill": lambda: install_skill_from_github(
-            root,
-            repo=options.get("repo", ""),
-            skill_path=options.get("skill-path", ""),
-            skill_name=options.get("skill-name", ""),
-            branch=options.get("branch", "main"),
-            github_token=options.get("token", ""),
-            source=options.get("source", ""),
-            dry_run=dry_run,
-        ),
         "install-skill": lambda: _install_skill_with_fallback(
             root,
             repo=options.get("repo", ""),
@@ -2151,9 +2676,13 @@ def run_tool_installer(args: list[str]) -> int:
             dry_run=dry_run,
         ),
         "validate-manifest": lambda: validate_manifest(root, dry_run),
-        "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
-        "ensure-codebase-memory": lambda: ensure_codebase_memory(root, dry_run),
+        "ensure-mcp-servers": lambda: ensure_mcp_servers(
+            root,
+            dry_run,
+            prune_junk=options.get("prune-junk", "true").lower() != "false",
+        ),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
+        "ensure-stack-toolchain": lambda: ensure_stack_toolchain(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):
         source = Path(options.get("source", REPO_ROOT))

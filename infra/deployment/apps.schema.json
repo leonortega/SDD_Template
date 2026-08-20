@@ -34,7 +34,18 @@
           },
           "role": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Role driving the port-range scheme (web, api, ...). Roles and their ranges are defined in infra/deployment/roles.json (ADR-0004) — consumers add custom roles there without touching Python."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["service", "job"],
+            "description": "Deploy kind (ADR-0003): service apps are rollout Deployments; job apps are wait-for-completion k8s Jobs (e.g. db-bootstrap, per-app migration jobs)."
+          },
+          "runtime": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Resolved per-app runtime (dotnet, node, python, go, ...) — filled at scaffold time (ADR-0003). Empty/absent in the shipped template."
           },
           "artifactName": {
             "type": "string",

@@ -1,0 +1,596 @@
+---
+name: dev-ops-deploy-prod
+license: MIT
+description: >-
+  >- Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs
+  to verify one or more QA-approved tickets (Closed state in OpenProject) included in a release, confirm the
+  QA-approved artifact and checksum, ensure release/RC tag consistency, update the release
+  branch, trigger production deployment, validate production page and health checks, verify configured observability
+  when available, and comment the production
+  result on every included ticket.
+---
+
+<!-- TIER 3: STAGE-SPECIFIC - PROD deployment skill -->
+
+# Deploy To PROD
+
+## Overview
+
+Use this skill after the configured QA gate has passed and moved each included ticket to the configured `Done` state
+(`Closed` by default in OpenProject — status ID 12, E2E QA passed). QA-approved means QA accepted and PROD eligible;
+PROD remains an explicit release event that may include one or more QA-approved tickets. The release rule is:
+
+```text
+feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
+```
+
+PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
+For batch releases, promote the selected artifact commit once, then record the same PROD release result on every
+included ticket.
+
+## Shared Context
+
+Before production promotion, follow `.agents/skills/_shared/skill-startup.md`, which reads `.template/project-profile.json`,
+`.agents/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with
+`docs/architecture/deployment.md` as the
+stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use
+`python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.template/delivery-context.local.json`,
+`ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and
+`RenderTicketComment -Type ProdDeployment`.
+
+For push-triggered production deployment from the release branch, the commit or merged PR title must start with the
+ticket key format configured in `.template/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch
+configured application or test paths.
+Non-code changes outside those paths and non-ticket PRs must not deploy production.
+
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.agents/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-ops-deploy-prod --agent-role deployToProd \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-prod` is written automatically.
+If the upsert fails, stop and report before handoff.
+
+## Configuration
+
+Read `.template/client-tools.local.json` first. Fall back to `.template/client-tools.example.json` only for structure, then
+apply environment overrides when present.
+
+Required values:
+
+- `selected ticket adapter runtime values`, `configured Done state`
+- `selected repository/review adapter runtime values`
+- `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
+
+Provider-supported environment variables may override local JSON when present. Repository/review overrides include
+`selected repository/review adapter overrides`.
+
+## Workflow
+
+Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-provider results, post-PROD eval,
+post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation
+evidence is present.
+
+## Preflight
+
+**Knowledge consult before promoting to PROD.** Before any PROD mutation, consult the knowledge base for
+release, rollback, and deployment lessons relevant to the release:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <release or deployment terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing entry matches a known release or rollback issue, apply it and cite it in the PROD handoff.
+Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+
+1. Resolve the primary ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final
+
+   release version from user input, ticket comments, repository PR metadata, tags, `app/qa-approved/latest.json`, or
+   Nexus artifact paths. If
+   `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to
+   the primary `ticketKey` for
+   single-ticket compatibility.
+2. Run `ValidateTicketLock` with the primary ticket, representative PR, QA-approved commit, source RC version when
+   known, and final
+   release version when known. If the result is invalid, stop before tag or `main` mutation. Do not reject a valid
+   batch release only because additional included tickets differ from the active ticket lock.
+3. Require SemVer tags:
+   - source RC: `vMAJOR.MINOR.PATCH-rc.N`
+   - final release: `vMAJOR.MINOR.PATCH`
+4. Fetch every included ticket with expanded state/project data and verify each one is in `configured Done state`.
+5. Read ticket comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same
+   commit/artifact or for a commit
+   reachable from the promoted artifact commit.
+6. Verify every included ticket's E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence
+   URL, and source RC version.
+
+   **⚠️ E2E QA gate:** If any included ticket is missing a passing E2E QA comment (`IA generated E2E QA: {ticketKey}`
+   with PASS result), stop before PROD
+   promotion. The E2E QA gate must pass for every ticket in the release. Run the E2E QA evidence contract in
+   `.agents/skills/_shared/delivery-contract-qa.md`
+   first if E2E QA has not been performed.
+
+7. Verify Nexus contains the selected provider artifact set. selected deployment provider requires:
+   - `app/{commitSha}/deployable-apps.json`
+   - `app/{commitSha}/deployment-config.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json` (QA-passed artifact)
+     selected deployment provider requires:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json`
+   - `app/{commitSha}/qa-observability.json` when observability is enabled
+8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
+9. Read `release-qa.json` and verify it references the same commit SHA, checksum, primary ticket, QA evidence URL,
+   and source RC
+   version as the ticket provider E2E QA evidence. If `includedTickets` exists, every included ticket must have Done
+   state, E2E
+   QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only
+   when
+   no `includedTickets` release membership proves the batch release.
+10. Verify the source RC tag exists and points to the QA-approved commit.
+11. Verify the final release tag does not already exist.
+12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`,
+    `canonicalPath`, `releaseManifestPath`, `ticketKey`, and `includedTickets`
+    match the selected release context before any `main` or tag mutation.
+
+Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
+
+## Main And Tag Promotion
+
+1. Verify the QA-approved commit exists on `dev`.
+2. Verify `main` can fast-forward to the QA-approved commit.
+3. If `main` has diverged, stop and report the divergence. Do not create a merge commit unless the user explicitly
+   changes the release policy.
+4. Fast-forward `main` to the QA-approved commit.
+5. Create the annotated final release tag only after fast-forward feasibility is confirmed and immediately before
+   pushing.
+6. Tag message must include primary ticket key, included ticket list, PR or release PR URL, source RC version, final
+   version, QA evidence URL, Nexus artifact URL, checksum, and commit SHA.
+7. Push `main` and the release tag only after every preflight check passes. If the push fails after creating the local
+   tag and the tag was not created on the remote, delete the local tag before stopping so no orphaned local release tag
+   remains.
+8. If branch protection blocks the `main` push, delete any local-only final release tag, open a PR to `main` with
+   the QA-approved commit and final version details, label/comment it as release-blocking, and stop before PROD
+   deployment until that PR is merged. The user must rerun `dev-ops-deploy-prod` after the promotion PR merges. Do not
+   deploy PROD
+   from a commit that is not reachable from `main`.
+
+### Branch-Protected `main` (Release-Branch PR Flow — proven)
+
+When `main` has **push disabled and requires 1 approval** (same protection as `dev`), the fast-forward path
+above cannot be used as-is. Use the release-branch PR flow, which matches the branch-protected `main`
+constraint:
+
+1. Create `release/vX.Y.Z` from the QA-approved commit (the artifact commit — **do not rebuild**).
+2. Create the **final annotated tag** (`vX.Y.Z`) on that same commit.
+3. Open a **release-blocking PR** `release/vX.Y.Z → main`, label it `agent-reviewed` (clean AI review marker),
+   get **1 approval from a user other than the PR author** (self-approval is rejected), and merge.
+
+   This is the **PROD release-PR variant (Step 1 only)** of the shared PR
+   lifecycle (`.agents/skills/_shared/pipeline-pr-lifecycle.md`): the artifact is
+   already QA-approved and code-reviewed, so no AI review, feedback loop, or CI
+   fix loop runs — only PR creation + reviewer request (Step 2 command) + the
+   `agent-reviewed` label + human approval/merge.
+4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod`,
+   `artifact_commit_sha={qaApprovedCommit}`, `release_version={finalVersion}`, and
+   `source_rc_version={sourceRcVersion}` on the release branch so the workflow checks out exactly the QA-approved
+   commit, skips the build (artifact-reuse), and seeds `app/{commitSha}/release-prod.json` with the version data.
+   It deploys **only** the `prod` target. Dispatch example via the Gitea API (values from
+   `.template/client-tools.local.json` → `gitea.baseUrl` / `gitea.apiToken` / `gitea.owner` / `gitea.repo`):
+
+   ```bash
+   curl -s -o /dev/null -w "dispatch HTTP:%{http_code}\n" -X POST \
+     -H "Authorization: token ${GITEA_API_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{"ref":"release/vX.Y.Z","inputs":{
+            "environment":"prod",
+            "artifact_commit_sha":"{qaApprovedCommit}",
+            "release_version":"vX.Y.Z",
+            "source_rc_version":"vX.Y.Z-rc.1"}}' \
+     "${GITEA_BASE_URL}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/actions/workflows/package-deploy.yml/dispatches"
+   # HTTP 204 = dispatched (mirror the pattern in dev-ops-post-merge-deploy step 8)
+   ```
+
+Pitfalls:
+
+- `main` diverges from `dev` after a release-branch merge (the merge commit is only on `main`). This is expected and
+  does **not** block the next promotion — a fresh release branch from the new QA-approved dev commit works.
+- The final version must not already exist as a tag — the skill blocks reusing an existing final tag.
+- **Operator-promotion rule:** a `workflow_dispatch` with an explicit `artifact_commit_sha` is an
+  operator promotion and is **unconditionally deployable** — the strict src/test
+  "deployable-changes" gate applies only to auto-deploy (merge) paths, never to an explicit dispatch.
+- **Dispatch-ref discipline:** the workflow file is loaded from the **dispatch ref's tree**. A
+  `release/vX.Y.Z` cut from a commit that predates the explicit-`artifact_commit_sha` override in
+  `package-deploy.yml` would run the pre-fix gate and silently skip every deploy step while reporting
+  success. Ensure the release branch includes the override, or dispatch from `dev` — the
+  `artifact_commit_sha` input pins the exact QA-approved commit regardless of the dispatch ref's code.
+
+## PROD Deployment
+
+PROD deployment can be triggered in provider-specific ways:
+
+- selected deployment provider: a push/merge to `main` deploys PROD only when the changed files include
+  application/test/package source and the commit or merged PR title starts with the configured ticket key format from
+  `.template/project-profile.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer
+  commit to equal `GITHUB_SHA`, then validates
+  `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
+- selected deployment provider: manual configured package/deploy workflow dispatch with `environment=prod` deploys the
+  topology
+  artifacts identified by `artifact_commit_sha`.
+- selected deployment provider: manual configured selected-provider deploy workflow dispatch with `environment=prod`
+  deploys the
+  QA-approved image digest set from `app/{artifact_commit_sha}/container-images.json` into `sdd-prod`.
+
+For selected-provider manual dispatch, trigger the production workflow declared by the selected deployment adapter with:
+
+```text
+environment=prod
+artifact_commit_sha={qaApprovedCommit}
+release_version={finalVersion}
+source_rc_version={sourceRcVersion}
+```
+
+For the `package-deploy` adapter these map to the `workflow_dispatch` `inputs` (concrete curl in the release-branch
+PR flow above). The workflow uses `artifact_commit_sha` as the deploy commit (build skipped), verifies the
+QA-approved artifact on Nexus, records `release_version` as `version` and `source_rc_version` as `sourceRcVersion` in
+`app/{commitSha}/release-prod.json`, and runs PROD page + `/health` gates before success.
+
+For selected-provider manual dispatch, trigger the deploy workflow declared by the selected deployment adapter. The
+workflow must validate `release.json`, verify the RC pointer when `source_rc_version` is supplied, download the approved
+artifact
+metadata, and deploy only immutable artifact references.
+
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch.
+Maintenance-only
+changes such as `.template/**` or workflow-only edits must not deploy PROD. PROD must download the selected provider
+artifact
+set from Nexus, verify immutable artifact checksums or digests, deploy to PROD, then run:
+
+- PROD page smoke check: HTTP 200, expected title/content, no selected deployment provider placeholder page.
+- PROD health checks: every topology app health path returns HTTP 200 and JSON `status=ok`.
+
+After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must
+show that the workflow:
+
+- used `environment=prod`,
+- consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or resolved the same commit from
+  `app/qa-approved/latest.json` for a `main` push,
+- seeded `release_version` / `source_rc_version` into `app/{commitSha}/release-prod.json` when supplied,
+- downloaded the provider artifact set from Nexus,
+- verified every required checksum or digest reference,
+- skipped rebuild/republish behavior,
+- skipped DEV and QA deployment behavior,
+- ran direct PROD page and `/health` checks.
+- applied and verified the PROD configuration and monitoring evidence required by the selected deployment adapter.
+
+Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds,
+republishes, downloads an artifact commit that does not match the approved commit, lacks a PROD deployment path, deploys
+DEV/QA during PROD promotion, or skips `/health`, treat it as blocking workflow drift.
+
+## PROD Verification
+
+After the workflow succeeds, run direct verification before commenting success:
+
+1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
+2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
+3. Verify the PROD workflow applied and verified the configuration, artifact metadata, and monitoring evidence required
+   by the selected deployment adapter. Missing proof is blocking.
+4. If Seq log validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and
+   `/health` checks remain authoritative for app success.
+5. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not
+   claim success.
+6. When PROD verification passes, use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-prod.json`
+   with final release version, final tag,
+   included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow
+   run URL, monitoring status, and PROD deployment timestamp. The workflow already seeds `version` (from
+   `release_version`) and `sourceRcVersion` (from `source_rc_version`) — keep those consistent in the updated
+   manifest. Validate and upload the updated manifest to Nexus.
+7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload
+   `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The
+   release alias must
+   point back to canonical `app/{commitSha}/`; do not duplicate ZIP files into the version folder.
+
+PROD success must never be based on screenshots alone.
+
+## Grafana Dashboard Update
+
+After PROD verification passes, **automatically run the `grafana-board-update` skill** to update the Grafana SDD Service
+Status dashboard with the latest PROD URLs.
+
+1. Fetch `app/latest/env-urls-{env}.json` for every deployed environment (DEV, QA, PROD) from Nexus
+2. Follow the workflow in `.agents/skills/grafana-board-update/SKILL.md` to intelligently merge changes into
+   `infra/monitoring/grafana/dashboards/health-board.json`
+3. Add the new PROD rows to the Service Health panel
+4. Commit and push the updated dashboard JSON
+5. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
+
+   **⚠️ Note:** If the dashboard is **provisioned from disk** (via
+   `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`), Grafana rejects API writes with
+   `"Cannot save provisioned dashboard"`. The file-based change
+   is sufficient — provisioning picks it up on next restart (version bump ensures it overwrites the DB entry).
+
+## Ticket Provider Result
+
+Before commenting, read existing comments for every included ticket when the API allows it. Use this stable marker:
+
+```text
+IA generated PROD deployment: {finalVersion}
+```
+
+Do not duplicate a PROD result comment with the same marker, commit, artifact, and PROD URL on an included ticket unless
+the user explicitly asks for a fresh run.
+
+Keep the marker as the first line by itself. Use `RenderTicketComment -Type ProdDeployment` with the resolved release,
+reference, evidence, and production
+validation data to format the readable Markdown body.
+
+Add or update the PROD result on every included ticket. The comment must include:
+
+- primary ticket, included ticket list, and current state for the ticket being commented
+- final release version and source RC version
+- release lineage: `artifact commit -> source RC version -> final release version`
+- final release tag URL or tag name and verified tag target commit
+- PR URL or release PR URL
+- commit SHA
+- Nexus artifact URL and checksum
+- Nexus release manifest URL
+- QA evidence URL
+- main ref update result
+- workflow run URL
+- PROD URL, page smoke status, and `/health` status
+- Seq log search, or monitoring unavailable/configuration notes
+- pass/fail result
+
+Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app
+checks fail, write a failure comment on the primary ticket and stop. If only local monitoring is unavailable, deployment
+may still pass, but every included ticket comment must state monitoring verification was unavailable.
+
+## Post-PROD Eval
+
+After successful PROD result comments are recorded for every included ticket, run the Promptfoo eval via the repo CLI
+runner to check for routing regressions:
+
+1. Run `python -m tools.sdd_cli agent-eval run` (fails loudly with a clear error if
+   promptfoo cannot run — direct fallback: `npx promptfoo eval --config
+   .agents/agent-evals/promptfooconfig.yaml --no-cache`)
+2. Read the results:
+   - **All tests pass**: report "no routing regressions detected"
+   - **Any test fails**: flag the failures for the retrospective audit
+
+Persist the eval results to `.agents/agent-evals/results.local.json` with mode `post-prod-eval`, scope set to the final
+release version, and the list of
+failures (if any).
+
+If the eval cannot run (missing tool, missing deps), report the blocker as an evidence gap but do not fail the PROD
+deployment — the eval is advisory, not a gate.
+
+## Post-PROD Retrospective
+
+After the eval completes, automatically run `dev-flow-retrospective-audit` in `post-prod-ticket-release` mode for the
+just-promoted release. Pass the primary
+ticket key, included ticket list, artifact commit, final release version, PROD URL, Nexus release manifest path or URL,
+and **the eval results** as evidence.
+
+This retrospective is a learning-evidence step, not a release gate. PROD success remains based on the artifact,
+workflow, direct PROD page, and `/health` validation above. If the retrospective cannot inspect optional evidence,
+report
+the evidence gap in the final handoff and keep the successful PROD result intact.
+
+The retrospective must include the eval summary (total, passed, failed) in its findings:
+
+- **All tests passed**: report "no routing regressions detected"
+- **Any test failed**: report each failure as an `eval-regression` finding, then **automatically escalate** into the
+  `eval-driven-improvement` cycle described below to
+  classify and fix the failures
+
+The retrospective must persist compact, sanitized learning evidence:
+
+- append or update local audit result data in ignored `.agents/agent-evals/results.local.json`,
+- add or reuse a compact ticket comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
+- include the eval summary (total, passed, failed) in the findings,
+- include recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when
+  applicable.
+
+The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests,
+create tickets, schedule automations, or apply docs, contract, skill, or knowledge changes. Eval infrastructure changes
+(routing_provider.py and promptfooconfig.yaml only) are handled by the auto-escalation flow below. Do not include
+secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket
+comment.
+
+## Eval-Driven Improvement Auto-Escalation
+
+If the Post-PROD Retrospective found any `eval-regression` failures, **automatically escalate** into the full
+`eval-driven-improvement` cycle. This runs
+sequentially after the retrospective completes and is fully automatic — no manual intervention needed.
+
+### Scope
+
+Auto-escalation is limited to **eval infrastructure files only**:
+
+- `.agents/agent-evals/routing_provider.py` — fix routing logic bugs
+- `.agents/agent-evals/promptfooconfig.yaml` — update test expectations or add coverage
+
+It must **never** auto-apply changes to delivery skills, shared contracts, configure skills, CI workflows, product code,
+docs, knowledge files, or any file outside the eval infrastructure.
+
+### Auto-Flow Steps
+
+#### Step 1 — Probe
+
+Run the eval again to get a fresh, detailed result set:
+
+```bash
+python -m tools.sdd_cli agent-eval run
+```
+
+Read the output and identify every failing test case. Persist the full result set to
+`.agents/agent-evals/results.local.json` with mode `eval-driven-improvement` and
+sub-mode `probe`.
+
+**Outcome:** List of failing test cases with expected vs actual routes.
+
+#### Step 2 — Diagnose
+
+For each failing test case, determine the root cause:
+
+1. Check if the delivery contract has changed (git diff on `_shared/delivery-contract.md` and
+   `_shared/delivery-contract-core.md`)
+2. Check if `routing_provider.py` was recently modified (git log or git diff)
+3. Check if `promptfooconfig.yaml` test expectations are stale
+4. Trace the failing test's input variables through `_evaluate_route()` in `routing_provider.py`
+
+**Heuristic for classification:**
+
+- If `routing_provider.py` has a condition that contradicts the delivery contract → **`Fix routing provider`** (bug in
+  logic)
+- If `routing_provider.py` matches the delivery contract but the test expects an old route →
+  **`Update test expectation`** (stale assertion)
+- If the failing scenario has no test coverage → **`Add new test case`** (eval-coverage gap)
+- If the routing logic change is correct and the test matches → **`No change — contract drift`** (do not auto-apply,
+  report as finding)
+
+**Outcome:** Classification per failing test: `fix-routing`, `update-expectation`, `add-coverage`, or `defer`.
+
+Persist the diagnoses to `results.local.json` with sub-mode `diagnose`.
+
+#### Step 3 — Propose
+
+For each `fix-routing` or `update-expectation` or `add-coverage` diagnosis, draft the exact change:
+
+- **fix-routing**: Identify the incorrect condition/return in `_evaluate_route()` and the correct value. Produce the
+  exact line change.
+- **update-expectation**: Identify the current expected route in the `javascript` assertion and the correct expected
+  route.
+- **add-coverage**: Identify the missing scenario, input variables, and expected route for the new test case.
+
+**Outcome:** Concrete, executable change plan (one per fixing test).
+
+#### Step 4 — Apply
+
+Apply each proposed change in order. Apply the simplest fixes first (`update-expectation` and `add-coverage` before
+`fix-routing`):
+
+1. For `update-expectation`: Edit the assertion string in `promptfooconfig.yaml` to match the correct expected route.
+2. For `add-coverage`: Add a new test case entry to the `tests` array in `promptfooconfig.yaml` with the correct
+   vars, provider, and
+   assertion.
+3. For `fix-routing`: Edit `routing_provider.py` to correct the condition, return value, or missing check.
+
+After EACH change, run the full eval suite:
+
+```bash
+python -m tools.sdd_cli agent-eval run
+```
+
+- If all tests pass → move to the next fix (or report success if all are done)
+- If any test fails → **revert the change**, report the attempted fix and the failure, and
+  **stop the auto-escalation** — do not continue applying
+  remaining fixes
+
+#### Step 5 — Commit
+
+After all fixes are applied and verified (all eval tests pass):
+
+1. Stage only the changed eval infrastructure files:
+
+   ```bash
+   git add .agents/agent-evals/routing_provider.py .agents/agent-evals/promptfooconfig.yaml .agents/agent-evals/results.local.json
+   ```
+
+2. Commit with message:
+
+   ```text
+   [SDD] Auto-fix eval regressions after PROD v{finalVersion}: {short summary of fixes}
+   ```
+
+3. Push to the current branch.
+
+### Safety Rules
+
+- **Stop if eval cannot run**: If `python -m tools.sdd_cli agent-eval run` fails to
+  execute (missing tool, missing deps), report the blocker and stop. Do not apply any
+  changes.
+- **Stop on revert**: If a fix causes other tests to fail, revert the change and stop. Report the failed fix attempt
+  and which
+  test broke.
+- **Stop on contract drift**: If the diagnosis is `No change — contract drift` (neither routing provider nor test is
+  wrong — the contract itself changed), do
+  not auto-apply. Report the drift as a finding requiring manual review.
+- **Only eval files**: Never auto-apply changes outside `.agents/agent-evals/routing_provider.py` or
+  `.agents/agent-evals/promptfooconfig.yaml`. If a fix would require changing a delivery skill,
+  shared contract, or docs, stop and report the need for manual intervention.
+- **Re-run eval after every change**: Never apply two fixes without running eval between them.
+
+### Failure Handling
+
+If any step in the auto-escalation fails:
+
+1. Report what was attempted and what failed.
+2. If `git commit` or `git push` failed (hook rejection, network issue, merge conflict): do not retry — report the
+   blocker and
+   the **uncommitted state**. The eval files remain modified and verified but uncommitted — flag this in the output so
+   manual action
+   can commit them.
+3. For all other failures (eval run fails, fix causes test regression, etc.): leave all files in their original state by
+   reverting any partial changes with `git checkout` on the modified eval files.
+4. Do not re-run PROD deployment — PROD already succeeded.
+5. Include the failure details in the final release output.
+6. Recommend manual inspection of the eval regression.
+
+### Auto-Escalation Output
+
+Include in the final release output:
+
+- Auto-escalation triggered? (yes/no and why)
+- Number of failures found → classified → fixed
+- Files changed (if any)
+- Final eval result (all pass / some fail)
+- Commit SHA (if changes were committed)
+- Any failures or skipped items with rationale
+
+## Output
+
+Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results,
+ticket-provider PROD comment status for every included ticket, Grafana dashboard update status, post-PROD retrospective
+result path and ticket provider marker status, and any handoff, audit, or monitoring gaps.
+
+## Failure Rules
+
+- Missing selected ticket adapter config: stop before ticket-provider reads or mutations.
+- Any included ticket not in `configured Done state`: stop.
+- Missing or stale E2E QA marker for any included ticket: stop.
+- Ticket context lock mismatch: stop before tag, `main`, workflow, ticket provider, or release manifest mutation.
+- Missing source RC tag or wrong tag target: stop.
+- Existing final release tag: stop.
+- Missing Nexus artifact/checksum/commit metadata: stop.
+- Missing selected deployment-adapter PROD configuration verification: stop.
+- Missing selected deployment-adapter immutable artifact metadata, RC pointer validation, or monitoring evidence when
+  required: stop.
+- Checksum, commit metadata, or included ticket membership mismatch: stop.
+- Diverged `main`: stop.
+- Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the
+  remote.
+- Branch protection blocks `main`: open a release-blocking promotion PR and require rerunning this skill after merge.
+- PROD workflow violates the artifact-reuse contract: route to `$configure-artifact-repository` or
+  `$configure-dev-environment`, fix the workflow through PR, then
+  rerun PROD dispatch only after the fix reaches `main`.
+- Missing selected deployment-provider production configuration or repository workflow secrets: route to
+  `$configure-dev-environment`, configure the secrets from selected deployment provider deployment outputs without
+  exposing secret values,
+  then rerun PROD dispatch.
+- PROD workflow failure: comment failure and stop.
+- PROD page or `/health` failure: comment failure and stop.
+- Seq unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
+- Secrets in logs or comments: redact or discard before reporting.

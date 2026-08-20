@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,15 +19,29 @@ from urllib.parse import urlparse
 # ── Core constants ───────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Single Python floor: the CLI gate (cli.py), prereqs, and full_setup all
+# require 3.11+ — keep one constant in sync (was (3, 14), which wrongly
+# rejected 3.11-3.13 runtimes and contradicted the CLI message).
 PYTHON_REQUIRES = (3, 11)
 
 STANDARD_STAGES = [
     "dev-flow-start-ticket",
+    "dev-flow-propose-change",
     "dev-flow-implement-ticket",
+    "dev-flow-verify-change",
     "dev-flow-pr-review-agent",
     "dev-flow-pr-review-feedback-loop",
     "dev-ops-post-merge-deploy",
     "dev-ops-deploy-qa",
+    "qa-gate",
+    "dev-flow-archive-change",
+    "dev-flow-file-qa-bug",
+    "dev-ops-deploy-prod",
+    "dev-ops-rollback-prod",
+    "dev-ops-hotfix-prod",
+    # dev-flow-continue-implementation is intentionally NOT listed: it is a resume
+    # router that records a telemetry row only when it performs meaningful routing
+    # work, so it is not part of the standard linear flow the timing table renders.
 ]
 # ── Generic JSON cache (lazy-loading helper) ──────────────────────────
 
@@ -108,9 +123,48 @@ Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
 # ── SDD tool helpers ─────────────────────────────────────────────────────
 
 
+_GIT_IGNORED_CACHE: dict[str, set[str]] = {}
+
+
+def _git_ignored_untracked(source: Path) -> set[str]:
+    """Return gitignored-and-untracked relative paths (posix) under source.
+
+    The template's `.gitignore` is treated as an extra blacklist: local-only
+    files (secrets, runtime DB state, generated artifacts) are never installed.
+    Tracked files — even ones matching an ignore rule — and untracked files
+    that are not ignored are deliberately kept, so the walk stays
+    exclusion-based (blacklist), not a git whitelist.
+
+    The blacklist only activates when ``source`` is the root of a git
+    worktree (path alignment requires repo-root-relative paths); otherwise
+    an empty set is returned and the rule exclusions still apply.
+    """
+    key = str(source.resolve())
+    if key in _GIT_IGNORED_CACHE:
+        return _GIT_IGNORED_CACHE[key]
+    result: set[str] = set()
+    top = run_native(["git", "rev-parse", "--show-toplevel"], source, timeout=30)
+    if top["returncode"] == 0 and top["stdout"]:
+        toplevel = Path(top["stdout"].strip()).resolve()
+        if toplevel == source.resolve():
+            listed = run_native(
+                ["git", "ls-files", "--others", "--exclude-standard", "--ignored"],
+                toplevel,
+                timeout=60,
+            )
+            if listed["returncode"] == 0:
+                result = {line for line in listed["stdout"].splitlines() if line}
+    _GIT_IGNORED_CACHE[key] = result
+    return result
+
+
 def walk_sdd_source_files(source: Path) -> list[str]:
     """Walk source directory using os.scandir, skipping excluded directories
     entirely during traversal instead of walking them and filtering after.
+
+    Exclusion stays blacklist-based: rule exclusions (parts, segments,
+    suffixes) plus gitignored-and-untracked local files are skipped, while
+    every tracked file and untracked-but-not-ignored file is included.
 
     Returns sorted list of relative posix paths for all non-excluded files.
     """
@@ -118,6 +172,7 @@ def walk_sdd_source_files(source: Path) -> list[str]:
     exclude_parts = get_sdd_tool_exclude_parts()
     exclude_segments = get_sdd_tool_exclude_segments()
     exclude_suffixes = get_sdd_tool_exclude_suffixes()
+    ignored_untracked = _git_ignored_untracked(source)
 
     stack: list[tuple[Path, str]] = [(source, "")]
     while stack:
@@ -156,6 +211,9 @@ def walk_sdd_source_files(source: Path) -> list[str]:
                         if any(
                             entry_rel.endswith(suffix) for suffix in exclude_suffixes
                         ):
+                            continue
+                        # Exclude gitignored-and-untracked local files
+                        if entry_rel in ignored_untracked:
                             continue
                         files.append(entry_rel)
         except PermissionError:
@@ -215,7 +273,9 @@ def read_json(path: Path, optional: bool = False) -> dict[str, Any]:
 def write_json(path: Path, data: dict[str, Any]) -> None:
     """Write a JSON file with pretty-printing."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # newline="\n": on Windows, text-mode write_text would translate LF to
+    # CRLF; keep generated JSON LF to match .editorconfig (end_of_line = lf).
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def nested(data: dict[str, Any], *keys: str) -> Any:
@@ -314,6 +374,17 @@ def find_meta(body: str, label: str) -> str:
     return (match.group(1) or "").strip() if match else ""
 
 
+def native_command(name: str) -> list[str]:
+    """Return the invocation Python subprocess can start on this platform.
+
+    With ``shell=False`` on Windows, CreateProcess does not resolve
+    ``.cmd``/``.bat`` files via PATHEXT: a bare ``npm`` or ``npx`` raises
+    FileNotFoundError even when the tool is on PATH. Always use the explicit
+    ``.cmd`` name there; non-Windows shells resolve the bare name fine.
+    """
+    return [f"{name}.cmd"] if sys.platform == "win32" else [name]
+
+
 def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, Any]:
     """Run a native shell command and return structured output."""
     try:
@@ -364,16 +435,91 @@ def http_status(url: str, timeout: int = 5) -> tuple[int | None, str]:
         return None, str(ex)
 
 
+def http_json(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    basic: tuple[str, str] | None = None,
+    bearer: str = "",
+    timeout: int = 10,
+) -> tuple[int, str]:
+    """Perform an HTTP request with optional JSON body and auth.
+
+    Returns ``(status_code, response_body)``; failures (connection, timeout,
+    TLS, invalid URL) return ``(0, str(exc))`` so callers can treat 0 as an
+    unreachable/unavailable result without raising.
+
+    ``basic`` is a ``(username, password)`` pair for Basic auth; ``bearer`` is
+    a raw token for Bearer auth. When both are provided, ``bearer`` wins.
+    """
+    try:
+        parsed = urlparse(url)
+        connection_cls = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        connection = connection_cls(
+            parsed.hostname or "localhost", parsed.port, timeout=timeout
+        )
+        headers = {"Content-Type": "application/json"}
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
+        elif basic:
+            import base64
+
+            encoded = base64.b64encode(f"{basic[0]}:{basic[1]}".encode()).decode()
+            headers["Authorization"] = f"Basic {encoded}"
+        payload = json.dumps(body) if body is not None else None
+        request_path = (parsed.path or "/") + (
+            ("?" + parsed.query) if parsed.query else ""
+        )
+        connection.request(method, request_path, body=payload, headers=headers)
+        response = connection.getresponse()
+        data = response.read().decode("utf-8")
+        connection.close()
+        return response.status, data
+    except Exception as ex:
+        return 0, str(ex)
+
+
+# ── Quality config helpers ───────────────────────────────────────────────
+
+
+def quality_coverage_minimum(root: Path, fallback: int = 80) -> int:
+    """Read the coverage minimum percent from the quality config chain.
+
+    Checks ``.template/quality.local.json`` then ``.template/quality.example.json``
+    for ``coverage.minimumPercent``; returns ``fallback`` when unset or
+    unparseable. Single source of truth for the coverage gate (stack-tests,
+    CI, and audit modes all read the same chain).
+    """
+    for name in ("quality.local.json", "quality.example.json"):
+        path = root / ".template" / name
+        if not path.exists():
+            continue
+        try:
+            value = nested(read_json(path), "coverage", "minimumPercent")
+        except (ValueError, OSError):
+            continue
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                break
+    return fallback
+
+
 # ── Project profile helpers ──────────────────────────────────────────────
 
 
 def load_project_profile(root: Path) -> dict[str, Any]:
     """Load the project profile, merging base and local overlays."""
-    base_path = root / ".codex" / "project-profile.json"
+    base_path = root / ".template" / "project-profile.json"
     if not base_path.exists():
-        base_path = root / ".codex" / "project-profile.example.json"
+        base_path = root / ".template" / "project-profile.example.json"
     base = read_json(base_path, optional=True)
-    local = read_json(root / ".codex" / "project-profile.local.json", optional=True)
+    local = read_json(root / ".template" / "project-profile.local.json", optional=True)
     return merge_dicts(base, local)
 
 
@@ -405,26 +551,26 @@ def read_ticket_pattern(root: Path) -> str:
     pattern = nested(profile, "workflow", "ticketKeyPattern")
     if pattern:
         return pattern
-    policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
-    return policy.get("ticketKeyPattern", "E2EPROJECT-[0-9]+")
+    policy = read_json(root / ".template" / "delivery-policy.json", optional=True)
+    return policy.get("ticketKeyPattern", "TICKET-[0-9]+")
 
 
 def profile_audit_findings(root: Path) -> list[dict[str, str]]:
     """Audit the project profile and return findings."""
     findings: list[dict[str, str]] = []
-    if not (root / ".codex" / "project-profile.json").exists():
+    if not (root / ".template" / "project-profile.json").exists():
         add_bucket_item(
             findings,
-            ".codex/project-profile.json",
+            ".template/project-profile.json",
             "missing.profile",
             "Project profile is missing.",
             "warning",
             "pre-start",
         )
-    if not (root / ".codex" / "project-profile.schema.json").exists():
+    if not (root / ".template" / "project-profile.schema.json").exists():
         add_bucket_item(
             findings,
-            ".codex/project-profile.schema.json",
+            ".template/project-profile.schema.json",
             "missing.schema",
             "Project profile schema is missing.",
             "warning",
@@ -517,9 +663,7 @@ def copy_seed_file(
     )
 
 
-def new_configure_result(
-    mode: str, dry_run: bool, write_enabled: bool
-) -> dict[str, Any]:
+def configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
     """Create a fresh empty configure result dict."""
     return {
         "mode": mode,
@@ -531,11 +675,6 @@ def new_configure_result(
         "warnings": [],
         "valid": True,
     }
-
-
-def configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
-    """Alias for new_configure_result for backward compatibility."""
-    return new_configure_result(mode, dry_run, write_enabled)
 
 
 def add_bucket_item(
@@ -578,8 +717,12 @@ def read_env_file(path: Path) -> dict[str, str]:
 def write_env_file(path: Path, values: dict[str, str]) -> None:
     """Write a dict of key-value pairs as a .env file."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # newline="\n": on Windows, text-mode write_text would translate LF to
+    # CRLF; keep generated .env files LF to match .editorconfig (end_of_line = lf).
     path.write_text(
-        "".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8"
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -624,6 +767,48 @@ def add_env_drift_findings(root: Path, result: dict[str, Any]) -> None:
             add_bucket_item(
                 result["findings"], relative, "env.stale-keys", stale_msg, "warning"
             )
+
+
+def client_tools_project_identifier_findings(root: Path) -> list[dict[str, str]]:
+    """Warn when client-tools.local.json has no usable OpenProject project identifier.
+
+    The OpenProject MCP/ticket flow calls
+    ``GET {baseUrl}/api/v3/projects/{projectIdentifier}``, so a missing or
+    placeholder value (``replace-with-project-identifier``) produces confusing
+    404s instead of an actionable error. Provisioning (``provision_lab_users``,
+    setup-lab step 11) fills both the top-level ``projectIdentifier`` and
+    ``openProject.provisioning.project.identifier`` with the real identifier
+    (e.g. ``e2eproject``). Returns findings only; never raises on unreadable
+    files.
+    """
+    findings: list[dict[str, str]] = []
+    path = root / ".template" / "client-tools.local.json"
+    if not path.exists():
+        return findings
+    try:
+        data = read_json(path, optional=True)
+    except Exception:
+        return findings
+    openproject = data.get("openProject", {}) if isinstance(data, dict) else {}
+    if not isinstance(openproject, dict):
+        return findings
+    identifier = str(openproject.get("projectIdentifier", "") or "").strip()
+    if not identifier or identifier.startswith("replace-with"):
+        add_bucket_item(
+            findings,
+            ".template/client-tools.local.json",
+            "openProject.projectIdentifier",
+            (
+                "openProject.projectIdentifier is missing or still a placeholder "
+                "('replace-with-project-identifier'). The OpenProject MCP/ticket "
+                "flow calls /api/v3/projects/{projectIdentifier} and will 404. "
+                "Run provision_lab_users (setup-lab step 11) to provision the "
+                "project (e.g. e2eproject)."
+            ),
+            "warning",
+            "audit",
+        )
+    return findings
 
 
 def configure_set_env_mode(

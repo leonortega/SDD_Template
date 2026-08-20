@@ -1,7 +1,0 @@
-name: agentic-e2e
-
-include:
-  - ./openproject/compose.yml
-  - ./gitea/compose.yml
-  - ./nexus/compose.yml
-  - ./monitoring/compose.yml

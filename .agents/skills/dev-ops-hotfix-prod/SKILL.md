@@ -1,0 +1,156 @@
+---
+name: dev-ops-hotfix-prod
+license: MIT
+description: >-
+  >- Run an expedited but gated production hotfix workflow for urgent targeted code fixes, including incident/hotfix
+  ticket creation, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit production
+  promotion through selected project-profile adapters. Use when rollback is insufficient and a production regression
+  needs a small code fix.
+---
+
+<!-- TIER 3: STAGE-SPECIFIC - PROD hotfix skill -->
+
+# Hotfix PROD
+
+## Overview
+
+Use this skill when PROD needs a targeted code fix rather than a rollback. It is expedited in scope, not in quality
+gates: review, tests, immutable artifacts, QA evidence, and explicit PROD promotion
+still apply.
+
+Prefer `dev-ops-rollback-prod` when restoring a known-good artifact is enough.
+
+## Shared Context
+
+Before starting, follow `.agents/skills/_shared/skill-startup.md`, which reads `.template/project-profile.json`,
+`.agents/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`,
+with `docs/conventions/development.md` and `docs/architecture/deployment.md` as stage-specific docs. Load selected
+ticket, repository/review, artifact, deployment, observability, stack, and E2E
+adapters for the current step.
+
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.agents/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-ops-hotfix-prod --agent-role hotfixProd \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-ops-hotfix-prod` is written automatically.
+If the upsert fails, stop and report before handoff.
+
+## Configuration
+
+Read `.template/project-profile.json` first. Read `.template/client-tools.local.json`
+only for selected adapter runtime values
+used by the normal delivery skills.
+
+## Workflow
+
+**Knowledge consult before acting.** Before confirming the incident path or mutating ticket or repository state, consult
+the knowledge base for known errors and fixes relevant to the incident symptom:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <incident symptom terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing `knowledge/errors/<error>.md` or `knowledge/fixes/<fix>.md` entry matches the symptom, apply it and cite
+it in the incident ticket and handoff. Record `Knowledge consulted: <files>` or
+`Knowledge consulted: none`.
+
+1. Confirm the incident or regression, affected PROD version, user impact, and why rollback is not sufficient.
+
+2. Read `.template/delivery-context.local.json` when present. If it points to an unrelated active feature ticket, stop and
+ask the user to confirm replacing the lock with the incident/hotfix ticket
+before mutation.
+3. Create or reuse a ticket provider incident/hotfix ticket with marker `IA generated PROD hotfix:
+{incidentOrTicketKey}`.
+4. Branch from `main` unless the user explicitly supplies a release branch policy.
+5. Use `dev-flow-start-ticket` for branch/comment setup, ticket lock creation, and OpenSpec creation unless the ticket
+is explicitly `no-openspec` or ops-only.
+
+6. **⚠️ MANDATORY: Implement Fix With Tests** — delegate to `dev-flow-implement-ticket` for the code fix, tests, PR,
+review-agent loop, and handoff. The TDD test-first pattern is defined in
+`.agents/skills/_shared/pipeline-tdd-cycle.md`, and the PR runs the **7-step shared
+PR lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md` — create/reuse
+PR → request reviewers → AI review → feedback loop → CI validation →
+re-verify reviewers → human merge). Key hotfix-specific details:
+
+   - **AC source:** the incident/hotfix ticket description (set in step 3).
+   - **Task source:** the OpenSpec `tasks.md` for any tasks created in step 5.
+   - **Tests are non-negotiable even for hotfixes.** The mandatory test requirement (unit + integration + architecture,
+   RED before fix code) applies equally to hotfixes. An expedited schedule is not
+   an excuse to skip tests.
+   - **Quality gates are the same as the feature flow** and are enforced by `dev-flow-implement-ticket` during
+   implementation:
+     - **Lefthook pre-push stack tests + coverage (`python -m tools.sdd_cli stack-tests`)** must pass before pushing —
+     unit, integration, and architecture tests per
+     `.agents/skills/_shared/test-requirements.md` (driven by `stack.testFrameworks`) plus the **coverage gate** with the
+     configurable threshold `coverage.minimumPercent` (default `80`). No stack:
+     clean skip. Do not bypass the hook with `--no-verify` unless the user explicitly requests it.
+     - **Coverage gate:** coverage must meet `coverage.minimumPercent` (default `80`) before PR creation. Below
+     threshold: HARD STOP (authority level 5) — add/update tests and re-run until met.
+     - **Full local CI loop:** run the checks in `.gitea/workflows/pr-validation.yml` (via `sdd-e2e-ci:local` when
+     Docker is available) and fix all errors before creating the PR.
+   - **Expect the PR body** (created by `dev-flow-implement-ticket`) to include the acceptance-to-test map and TDD
+   RED/GREEN evidence.
+7. After merge, use `dev-ops-post-merge-deploy` and the configured QA gate for artifact promotion and QA evidence.
+8. Invoke `dev-ops-deploy-prod` only when the user explicitly asks for PROD promotion after QA passes. Its
+   `package-deploy` dispatch carries the hotfix release context: `environment=prod`,
+   `artifact_commit_sha={hotfixCommit}`, `release_version={hotfixVersion}`, and
+   `source_rc_version={sourceRcVersion}` — the workflow skips the build (reuses the QA-approved
+   hotfix artifact) and records the version data in `app/{commitSha}/release-prod.json`.
+9. Comment the incident ticket with release lineage, evidence, and any temporary divergence from normal cadence.
+10. **Capture durable learning (mandatory)** — a hotfix is prime durable-learning material (incident symptom, root
+    cause, validated fix, deployment divergence). After the incident ticket comment, run the Durable Learning Capture
+    Gate (`.agents/skills/_shared/delivery-contract-core.md`):
+
+    ```bash
+    python -m tools.sdd_cli knowledge-search classify --task "<incident/hotfix ticket + fix summary>" --changed-files "<comma-separated changed paths>" --test-results "<validation outcome>"
+    ```
+
+    Build the changed-file list from the hotfix branch's commits (e.g. `git diff --name-only` vs `main`) or the PR's
+    changed-file list.
+
+    - If the classifier returns `UPDATE` candidates, load `.agents/skills/docs-knowledge-maintenance/SKILL.md` and
+      update **only** those candidate files (standard template, source-backed, never secrets); commit and push with a
+      ticket-key-prefixed message.
+    - If it returns `NO_CHANGES`, record `Docs: no durable context changes` / `Knowledge updated: none` — do not invent
+      files.
+    - The known-error/fix belongs in `knowledge/errors/<symptom>.md` or `knowledge/fixes/<fix>.md` when the classifier
+      routes it there.
+
+## Scope Rules
+
+- Keep hotfixes narrowly scoped to the production defect.
+- Do not bundle unrelated cleanup or feature work.
+- **Tests are non-negotiable even for hotfixes.** The mandatory test requirement (unit + integration + architecture, RED
+before fix code) applies equally to hotfixes. An expedited schedule is not an
+excuse to skip tests.
+- If the fix grows beyond a targeted change, stop and route to the normal `dev-flow-continue-implementation` flow.
+
+## Output
+
+Report the incident or hotfix ticket, branch, PR, **acceptance-to-test map** (ACs → unit/integration/architecture tests
+with RED/GREEN evidence), validation performed, artifact/QA/PROD status when
+reached, docs/knowledge capture outcome (`Docs updated: <files>` / `Docs: no durable context changes`,
+`Knowledge updated: <files>` / `Knowledge updated: none`), and the next handoff or blocker.
+
+## Failure Rules
+
+- Missing incident context: stop and ask for the production symptom and impact.
+- Rollback is clearly safer and sufficient: recommend `dev-ops-rollback-prod` first.
+- Tests, review, artifact, QA, or PROD checks fail: stop at the same gate as the normal delivery flow.
+- Lefthook pre-push stack tests fail or an unmapped framework is configured: stop before pushing — fix the tests or
+framework mapping and re-run `python -m tools.sdd_cli stack-tests` until it passes.
+Do not bypass the hook with `--no-verify` unless the user explicitly requests it. When no stack is configured the hook
+skips cleanly (expected template state).
+- Coverage below `coverage.minimumPercent` (default `80`): HARD STOP (authority level 5) before PR creation — add or
+update tests and re-run coverage until the threshold is met.
+- Branch protection or release workflow drift: route through the same repair path as `dev-ops-deploy-prod`.
+- Classifier or `docs-knowledge-maintenance` capture failure: stop the update step and report the blocker in the
+handoff — do not report the hotfix complete without the capture outcome.

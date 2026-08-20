@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Create non-root user for container runtime (skip if already exists)
-RUN id -u appuser >/dev/null 2>&1 || useradd -m appuser
+RUN id -u appuser >/dev/null 2>&1 || useradd -m -u 10001 appuser
 
 # Base tooling
 # hadolint ignore=DL3008

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Configured GitHub repositories where skills can be discovered and installed.",
+  "sources": [
+    {
+      "name": "awesome-copilot",
+      "repo": "github/awesome-copilot",
+      "path": "skills",
+      "branch": "main",
+      "description": "GitHub's awesome-copilot skills collection"
+    },
+    {
+      "name": "anthropics",
+      "repo": "anthropics/skills",
+      "path": "skills",
+      "branch": "main",
+      "description": "Anthropic's skills collection"
+    },
+    {
+      "name": "impeccable",
+      "repo": "pbakaus/impeccable",
+      "path": ".agents/skills/impeccable",
+      "branch": "main",
+      "description": "Impeccable - frontend design guidance for AI coding agents (23 commands, 59 deterministic detector rules)"
+    }
+  ]
+}

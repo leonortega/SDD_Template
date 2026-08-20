@@ -1,0 +1,1096 @@
+# Promptfoo Configuration for SDD Agent Routing Evaluation
+#
+# This config evaluates agent workflow routing decisions based on ticket,
+# branch, PR, and deployment state. The Python custom provider simulates
+# the routing logic that the Codex agent would follow.
+#
+# Run: npx promptfoo eval --no-cache
+# View results: npx promptfoo view
+
+prompts:
+  # Single prompt template - the provider receives the scenario as vars
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nCleanup pending: {{cleanupPending}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}\nCapture mode: {{captureMode}}"
+
+providers:
+  # Path relative to promptfooconfig.yaml's directory (same directory)
+  - id: "file://./routing_provider.py"
+    config:
+      # No additional config needed
+
+tests:
+  # ═══════════════════════════════════════════════════════════════
+  # TICKET LIFECYCLE ROUTING
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Todo ticket with no branch routes to dev-flow-start-ticket"
+    vars:
+      scenario: First ticket in the project
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket'
+
+  - description: "In Progress ticket with branch but no PR routes to dev-flow-implement-ticket"
+    vars:
+      scenario: Implementation in progress
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket'
+
+  - description: "Open PR exists routes to dev-flow-implement-ticket (review/fix loop)"
+    vars:
+      scenario: PR is open and awaiting review
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket'
+
+  - description: "PR merged to dev routes to dev-ops-post-merge-deploy"
+    vars:
+      scenario: PR has been merged to dev branch
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-post-merge-deploy'
+
+  - description: "Ticket in QA routes to configured QA gate"
+    vars:
+      scenario: Artifact deployed to QA, awaiting E2E validation
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence: deployed
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'configured QA gate'
+
+  - description: "QA pending user approval routes to the approval gate (never auto-approves)"
+    vars:
+      scenario: DEV is healthy and verified, but the user has not approved the QA deployment yet
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      qaApproved: false
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa-approval-gate'
+
+  - description: "QA user-approved routes to dev-ops-deploy-qa dispatch"
+    vars:
+      scenario: User approved the QA deployment after DEV verification
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      qaApproved: true
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa'
+
+  - description: "Explicit deploy-qa request routes to dev-ops-deploy-qa"
+    vars:
+      scenario: User explicitly asks to deploy to QA (approval granted via the request)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: deploy-qa
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa'
+
+  - description: "QA failed with product defect routes to dev-flow-file-qa-bug"
+    vars:
+      scenario: E2E QA found a product defect
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence: failed
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-file-qa-bug'
+
+  - description: "Done ticket without PROD request is blocked (stops)"
+    vars:
+      scenario: QA passed, ticket Done, but no PROD deployment requested
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-no-prod'
+
+  - description: "Closed ticket with pending cleanup routes to dev-ops-cleanup-resources (MUST: both prunes)"
+    vars:
+      scenario: QA passed, ticket moved to Closed, post-close cleanup still pending
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      cleanupPending: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: >
+          JSON.parse(output).route === 'dev-ops-cleanup-resources'
+          && output.includes('prune-docker-leftovers')
+          && output.includes('prune-kind-images')
+
+  # ═══════════════════════════════════════════════════════════════
+  # EDGE CASES
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "No product stack selected routes to dev-flow-pipeline-status"
+    vars:
+      scenario: Project has no selected stack yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: none
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pipeline-status'
+
+  - description: "Ambiguous ticket state routes to dev-flow-pipeline-status"
+    vars:
+      scenario: Multiple plausible targets, state is unclear
+      ticketState: unknown
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pipeline-status'
+
+  - description: "PROD incident/regression routes to dev-ops-rollback-prod"
+    vars:
+      scenario: Production incident detected
+      ticketState: In Progress
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      incident: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-rollback-prod'
+
+  - description: "PROD hotfix routes to dev-ops-hotfix-prod"
+    vars:
+      scenario: Urgent targeted code fix needed in production
+      ticketState: In Progress
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      hotfix: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-hotfix-prod'
+
+  # ═══════════════════════════════════════════════════════════════
+  # PARALLEL DELIVERY SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Parallel context (multi-ticket), Todo, lane free, routes to start-ticket"
+    vars:
+      scenario: Parallel delivery coordinator routing scenario
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket'
+
+  - description: "Parallel context (multi-ticket), PR merged, lane owned by other, blocked"
+    vars:
+      scenario: Serialized deployment lane owned by another ticket
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      laneOwner: OTHER-456
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-lane-conflict'
+
+  - description: "Parallel context (multi-ticket), QA stage, lane owned by other, blocked"
+    vars:
+      scenario: QA gate blocked because deployment lane is owned by another ticket
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence: deployed
+      productStack: selected
+      parallelEnabled: true
+      laneOwner: OTHER-456
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-lane-conflict'
+
+  - description: "Parallel context (multi-ticket), max active tickets reached, blocked"
+    vars:
+      scenario: Parallel delivery at capacity, cannot start new ticket
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-max-active'
+
+  - description: "Parallel context (multi-ticket), worktree exists, reuse for implementation"
+    vars:
+      scenario: Existing worktree matches ticket, reuse for continued implementation
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      worktreeExists: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket'
+
+  # ═══════════════════════════════════════════════════════════════
+  # DEPLOYMENT LANE SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "QA passed, PROD explicitly requested, routes to deploy-prod"
+    vars:
+      scenario: Done ticket with explicit PROD promotion request
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      prodRequested: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-prod'
+
+  - description: "PROD deploy blocked by lane owned by another ticket"
+    vars:
+      scenario: PROD promotion blocked by serialized lane ownership
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      prodRequested: true
+      parallelEnabled: true
+      laneOwner: OTHER-456
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-lane-conflict'
+
+  - description: "PR merged, missing Nexus artifact, blocked"
+    vars:
+      scenario: Nexus artifact missing for the merged commit
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      nexusArtifactExists: false
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-missing-artifact'
+
+  - description: "Release tag conflict blocks PROD deploy"
+    vars:
+      scenario: Final release tag already exists
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      releaseTagConflict: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-tag-conflict'
+
+  - description: "PR merged, lane acquired, post-merge deploy proceeds"
+    vars:
+      scenario: Serialized lane acquired by this ticket, deployment proceeds
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      laneOwner: current-ticket
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-post-merge-deploy'
+
+  # ═══════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE VALIDATION SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "PROD deploy blocked by NodePort collision across environments"
+    vars:
+      scenario: PROD deployment failed because NodePorts 30080/30500 were already allocated by DEV
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      prodRequested: true
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  - description: "DEV deploy blocked by infrastructure collision, routes to diagnostic"
+    vars:
+      scenario: DEV deployment blocked by NodePort collision with another environment
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  # ═══════════════════════════════════════════════════════════════
+  # EXPLICIT WORKFLOW-STAGE REQUESTS (routing matrix beyond state)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Explicit continue-implementation request routes to dev-flow-continue-implementation"
+    vars:
+      scenario: User asks to automatically continue the ticket workflow
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: continue-implementation
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-continue-implementation'
+
+  - description: "Explicit explore-change request routes to dev-flow-explore-change"
+    vars:
+      scenario: User asks to explore an idea or change before proposing it
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: explore-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-explore-change'
+
+  - description: "Explicit scaffold-project request routes to dev-flow-scaffold-project"
+    vars:
+      scenario: User asks to scaffold the project for the selected stack
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: scaffold-project
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-scaffold-project'
+
+  - description: "Explicit verify-change request routes to dev-flow-verify-change"
+    vars:
+      scenario: User asks to verify implementation matches the OpenSpec change
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: verify-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-verify-change'
+
+  - description: "Explicit archive-change request routes to dev-flow-archive-change"
+    vars:
+      scenario: User asks to archive the completed OpenSpec change
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: archive-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-archive-change'
+
+  - description: "Explicit dashboard update request routes to grafana-board-update"
+    vars:
+      scenario: CI deploy completed and user asks to refresh the Grafana dashboard
+      ticketState: QA
+      branchExists: false
+      prExists: true
+      prMerged: true
+      qaEvidence: deployed
+      productStack: selected
+      requestType: dashboard-update
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'grafana-board-update'
+
+  - description: "Explicit retrospective-audit request routes to dev-flow-retrospective-audit"
+    vars:
+      scenario: User asks to audit recent delivery workflow and Promptfoo eval results
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit'
+
+  - description: "Explicit propose-change request routes to dev-flow-propose-change"
+    vars:
+      scenario: User asks to propose an OpenSpec change for the ticket
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: propose-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-propose-change'
+
+  - description: "Explicit PR review request routes to dev-flow-pr-review-agent"
+    vars:
+      scenario: User asks to review the open pull request
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-agent'
+
+  - description: "Explicit PR review feedback request routes to dev-flow-pr-review-feedback-loop"
+    vars:
+      scenario: User asks to address PR review feedback on the open pull request
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review-feedback
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop'
+
+  - description: "Explicit docs-knowledge-maintenance request routes to docs-knowledge-maintenance"
+    vars:
+      scenario: User asks to update the workflow documentation after a delivery
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: docs-knowledge-maintenance
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'docs-knowledge-maintenance'
+
+  - description: "Explicit cleanup-resources request routes to dev-ops-cleanup-resources"
+    vars:
+      scenario: Ticket closed and user asks to clean up temporary test resources (Docker leftovers, temp files)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: cleanup-resources
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-cleanup-resources'
+
+  - description: "Explicit multi-ticket request routes to dev-flow-parallel-ticket-coordinator"
+    vars:
+      scenario: User asks to implement more than one ticket at the same time (e.g. implement tickets A and B)
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: implement-multiple-tickets
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-parallel-ticket-coordinator'
+
+  # ═══════════════════════════════════════════════════════════════
+  # STATE-DRIVEN RESUME (no requestType — in-progress + branch + resume)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "In-progress ticket with branch and resume request routes to continue-implementation orchestrator"
+    vars:
+      scenario: User asks to automatically continue the ticket without naming the step
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      resumeRequested: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-continue-implementation'
+
+  # ═══════════════════════════════════════════════════════════════
+  # REGRESSION: original test case
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Product-free shell status reports via pipeline-status (original test)"
+    vars:
+      scenario: Repository is a product-free shell
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: none
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pipeline-status'
+        # "Recognize that no product stack is selected"
+        # "Do not invoke product-specific build or QA gates"
+        # "Report that app targets are unconfigured"
+
+  # ═══════════════════════════════════════════════════════════════
+  # FRONTEND DESIGN ACTIVATION (stack-mapped skills during implementation)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Frontend stack implementation activates impeccable design skill"
+    vars:
+      scenario: Implementing a React + TypeScript frontend ticket that needs UI design work
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: react + typescript
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).activatedSkills.includes('impeccable')
+
+  - description: "Non-frontend stack implementation does not activate impeccable"
+    vars:
+      scenario: Implementing a backend-only FastAPI ticket with no frontend work
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: fastapi
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && !JSON.parse(output).activatedSkills.includes('impeccable')
+
+  - description: "Frontend stack without implementation stage does not activate impeccable"
+    vars:
+      scenario: Todo ticket on a frontend stack, no branch yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: react + typescript
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' && !JSON.parse(output).activatedSkills.includes('impeccable')
+
+  # ═══════════════════════════════════════════════════════════════
+  # PR VALIDATION GATE (CI-in-loop review blocking)
+  # ═══════════════════════════════════════════════════════════════
+  # Models dev-flow-pr-review-agent's CI-in-loop rule: a red, pending, or
+  # unreadable PR Validation run on the current head is a BLOCKER finding
+  # (id CI-001) and keeps the `agent-reviewed` clean marker off. The route
+  # is unchanged — the review/fix loop still runs to fix the failing steps.
+
+  - description: "Red PR Validation run blocks the review: BLOCKER finding, no agent-reviewed"
+    vars:
+      scenario: PR Validation (Gitea Actions) run is red on the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' &&
+          JSON.parse(output).review.agentReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER' && f.source === 'pr-validation')
+
+  - description: "Green PR Validation run with open PR keeps agent-reviewed clean"
+    vars:
+      scenario: PR Validation run is green on the current head with no findings
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: green
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === true && JSON.parse(output).review.findings.length === 0
+
+  - description: "Pending PR Validation run keeps agent-reviewed off (still blocking)"
+    vars:
+      scenario: PR Validation run is still running on the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: pending
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  - description: "Unreadable PR Validation run keeps agent-reviewed off (blocks clean marker)"
+    vars:
+      scenario: PR Validation run status cannot be determined for the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: unknown
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  # Chained/parallel PRs get the same review gate as the first PR: the full
+  # dev-flow-pr-review-agent workflow (CI check + AI review + agent-reviewed
+  # tag) is mandatory for every open PR, and the CI-in-loop rule applies
+  # identically in parallel context — red keeps the label off, green applies it.
+  - description: "Parallel (chained) open PR with red PR Validation run keeps agent-reviewed off"
+    vars:
+      scenario: Chained sibling PR in parallel delivery with a red PR Validation run
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' &&
+          JSON.parse(output).review.agentReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER' && f.source === 'pr-validation')
+
+  - description: "Parallel (chained) open PR with green PR Validation run keeps agent-reviewed clean"
+    vars:
+      scenario: Chained sibling PR in parallel delivery with a green PR Validation run and no findings
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      prValidationStatus: green
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === true && JSON.parse(output).review.findings.length === 0
+
+  - description: "Explicit PR review with red PR Validation run routes to review agent with BLOCKER finding"
+    vars:
+      scenario: User asks to review the PR while PR Validation is red
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-agent' &&
+          JSON.parse(output).review.agentReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  - description: "Explicit feedback request with red PR Validation run routes to the fix loop"
+    vars:
+      scenario: User asks to address PR review feedback while PR Validation is red
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review-feedback
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop' && JSON.parse(output).review.agentReviewed === false
+
+  - description: "Merged PR with red run has no review gate (CI no longer blocks merge)"
+    vars:
+      scenario: PR already merged to dev; PR Validation run was red before merge
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-post-merge-deploy' && JSON.parse(output).review === null
+
+  # ═══════════════════════════════════════════════════════════════
+  # TICKET REFINEMENT GATE (always ask the user before the IA block)
+  # ═══════════════════════════════════════════════════════════════
+  # Models dev-flow-start-ticket step 7: refinement runs at least 1
+  # grill-with-docs cycle (at most 4) and ALWAYS asks the user for extra
+  # info — even when the ticket seems complete — before the curated IA
+  # block is written. The route is unchanged (still dev-flow-start-ticket);
+  # the always-ask invariant is asserted via the provider's `refinement`
+  # gate object: `userAsked` false + `blocked` true until the user has been
+  # asked, and `null` outside the start-ticket stage.
+
+  - description: "Todo refinement must ask the user for extra info before writing the IA block"
+    vars:
+      scenario: Ticket seems complete, but the refinement has not asked the user for extra info yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      refinementUserAsked: false
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === false &&
+          JSON.parse(output).refinement.blocked === true
+
+  - description: "Todo refinement proceeds after the user answered the clarifying questions"
+    vars:
+      scenario: The user answered the grill-with-docs clarifying questions (extra info provided)
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      refinementUserAsked: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === true &&
+          JSON.parse(output).refinement.blocked === false
+
+  - description: "Refinement gate not applicable outside the start-ticket stage"
+    vars:
+      scenario: Implementation in progress — no ticket refinement happening
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).refinement === null
+
+  # Parallel-context refinement: the coordinator must verify refinementUserAsked
+  # per Todo ticket (mirrors dev-flow-parallel-ticket-coordinator Section 2 step 5
+  # and the ticketStarter return contract) before each ticket routes onward.
+
+  - description: "Parallel context (multi-ticket), Todo tickets, refinement must verify user asked before routing"
+    vars:
+      scenario: Two Todo tickets start in parallel, but refinement has not asked the user for extra info yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+      refinementUserAsked: false
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === false &&
+          JSON.parse(output).refinement.blocked === true
+
+  - description: "Parallel context (multi-ticket), Todo tickets, refinement asked user before routing"
+    vars:
+      scenario: Two Todo tickets start in parallel and the user answered each ticket's clarifying questions
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+      refinementUserAsked: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === true &&
+          JSON.parse(output).refinement.blocked === false
+
+  # ═══════════════════════════════════════════════════════════════
+  # DURABLE LEARNING CAPTURE GATE (archive / hotfix / retrospective)
+  # ═══════════════════════════════════════════════════════════════
+  # Models the Durable Learning Capture Gate wired into dev-flow-archive-change,
+  # dev-ops-hotfix-prod, and dev-flow-retrospective-audit: after the stage
+  # completes, run the classifier (knowledge-search classify), update ONLY the
+  # classifier-selected candidate docs/knowledge files via
+  # docs-knowledge-maintenance, and record the canonical markers. The route is
+  # unchanged; the invariant is exposed through the provider's `capture` gate
+  # object so eval cases can assert the capture step survives routing changes.
+  # The retrospective is mode-aware: apply mode updates files; read-only /
+  # proposal / automatic post-prod-ticket-release modes are advisory only
+  # (candidates reported as recommendations, nothing written).
+
+  - description: "Archive route runs the Durable Learning Capture Gate (classifier + candidate updates)"
+    vars:
+      scenario: User asks to archive the completed OpenSpec change (capture step mandatory)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: archive-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-archive-change' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.classifierRun === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Hotfix route runs the Durable Learning Capture Gate (classifier + candidate updates)"
+    vars:
+      scenario: PROD hotfix completed; capture step runs with the hotfix branch changed files
+      ticketState: In Progress
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      hotfix: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-hotfix-prod' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.classifierRun === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Retrospective in apply mode runs the Durable Learning Capture Gate (files updated)"
+    vars:
+      scenario: User asks to run the retrospective audit and apply the learning capture
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+      captureMode: apply
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Retrospective in read-only mode is advisory only (no file mutation)"
+    vars:
+      scenario: Read-only retrospective audit — candidates are recommendations, nothing is written
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+      captureMode: read-only
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit' &&
+          JSON.parse(output).capture.applied === false &&
+          JSON.parse(output).capture.scope === 'advisory-only'
+
+  - description: "Capture gate not applicable outside archive/hotfix/retrospective routes"
+    vars:
+      scenario: Implementation in progress — no durable-learning capture stage active
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).capture === null

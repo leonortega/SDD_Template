@@ -1,0 +1,6 @@
+{
+  "appId": "db-bootstrap",
+  "role": "job",
+  "kind": "job",
+  "templateVersion": "1.0.0"
+}
