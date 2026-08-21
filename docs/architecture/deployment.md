@@ -681,6 +681,64 @@ these via the Infinity datasource (using `source: "inline"` to avoid the URL bug
 5. Open a PR to `dev` and merge it — the CI pipeline builds and deploys automatically on the PR merge (direct pushes
 to `dev` never deploy). A change under `apps/<appId>/src` or `apps/<appId>/test` triggers the deployable-changes gate.
 
+## Lessons Learned (TKP-37)
+
+### Angular 20 Builder Behavior
+
+The `@angular-devkit/build-angular:application` builder includes hydration in the client bundle by default. For static
+nginx serving (no SSR), switch to the legacy `browser` builder:
+
+```json
+{
+  "builder": "@angular-devkit/build-angular:browser",
+  "options": {
+    "main": "src/main.ts",
+    "polyfills": ["zone.js"],
+    "ssr": false
+  }
+}
+```
+
+The `browser` builder outputs to `dist/` (not `dist/browser/`), so the Dockerfile COPY path must match.
+
+### Kustomize Image Override
+
+`kustomize edit set image` requires `OLD=NEW` format. Without the `OLD=` prefix, the override never applies:
+
+```bash
+# WRONG — adds entry but doesn't override
+kustomize edit set image host.docker.internal:5001/tkp-web:abc123
+
+# CORRECT — maps from base image
+kustomize edit set image tkp-web:latest=host.docker.internal:5001/tkp-web:abc123
+```
+
+### Manifest Filter for Secrets
+
+The CI deploy filter matches resources by `name` only. Secrets with names like `tkp-api-secrets` don't match the
+affected app ID `tkp-api`. Add label-based matching:
+
+```python
+app_label = re.search(r"^  app:\s*(\S+)", doc, flags=re.M)
+if app_label and app_label.group(1) in affected:
+    kept_deployments.append(doc)
+```
+
+### Health Response Contract
+
+All services must return `{"status": "ok"}` — the CI health gate checks for this exact value. Using
+`"healthy"` or other variants causes health gate failures.
+
+### Port Allocation
+
+Always use the role registry (`infra/deployment/roles.json`) to determine ports. The block-of-10 scheme:
+
+| Role | Host (dev/qa/prod) | NodePort (dev/qa/prod) |
+|---|---|---|
+| web | 8081/8082/8083 | 30080/31080/32080 |
+| api | 5002/5003/5004 | 30500/31500/32500 |
+| database | 5432/5433/5434 | 30700/31700/32700 |
+
 ## Known Limitations
 
 - **Single-node K8s**: kind creates a single-node cluster — no pod anti-affinity, no multi-AZ. Fine for DEV/QA; PROD

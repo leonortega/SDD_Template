@@ -111,9 +111,19 @@ stops immediately. Each step is validated before proceeding to the next.
 
 `setup-lab` is an alias for `full-setup`, which orchestrates **4 stages**: (1) prerequisites, (2) lab setup, (3) tool
 installation, (4) **project guidance** — always the final stage. When no project stack is configured yet, stage 4
-prompts for the project name + frontend/backend/database (interactive TTY only) and then runs the internet skill
-discovery + install flow (`set-project-stack` + guidance); non-TTY/CI runs just report the missing stack and never
-auto-install. A stack configured before `setup-lab` skips the prompt and runs guidance directly.
+detects the missing stack and returns an `agentAction: ask-stack-and-set` signal so the agent asks the user
+for the project name + frontend/backend/database, then calls `set-project-stack --values-json`.
+After the stack is set, `setup_project_guidance` discovers internet skills and returns `pendingSkills` for the
+agent to present to the user. The agent then re-calls with `selected_skills` to install the user's choices.
+Interactivity is agent-driven — never dependent on TTY/stdin availability. The function never uses `input()`.
+A stack configured before `setup-lab` skips the prompt and runs guidance directly.
+
+**Presenting pendingSkills (agent-driven, recommended approach):**
+When `pendingSkills` is returned, the agent presents the list to the user and collects their selections.
+The recommended pattern is `ask_user` with `multiSelect: true` — each discovered skill becomes a
+checkbox option so the user can select which to install. This is not a hard requirement; agents may
+use any interactive mechanism available to them (e.g. plain text list with numbered reply, or other
+UI tools). The key rule: **the user decides which skills to install, never auto-installs.**
 
 ```text
 text
