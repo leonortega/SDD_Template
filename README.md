@@ -27,18 +27,12 @@ learning.
   errors, fixes, patterns, lessons learned), and `openspec/specs/` (archived OpenSpec
   behavior specs, created on change archive). Durable context lives in the repo, not in
   chat history. See [`docs/conventions/context-management.md`](docs/conventions/context-management.md).
-- **Knowledge graph exploration (optional)** — the codebase can also be explored as a
-  queryable knowledge graph with external tools like [Graphify](https://github.com/Graphify-Labs/graphify):
-  local, deterministic tree-sitter AST parsing (no LLM for code, no vector store)
-  maps code, docs, SQL schemas, and configs into a graph with every edge tagged
-  `EXTRACTED`/`INFERRED` — a vector-free alternative to grep-based code reading. Not
-  installed by the lab; see [§7](#7-considered-but-not-adopted-future-improvements).
 - **Skills** — 82 skills (in `.agents/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
-- **Agent eval** — a deterministic Promptfoo suite (61 routing cases) that verifies the
+- **Agent eval** — a deterministic Promptfoo suite (64 routing cases) that verifies the
   harness routes user requests to the correct skill. See the
-  [Agent Eval](#52-agent-eval-verify-the-router) section.
+  [Agent Eval](#62-agent-eval-verify-the-router) section.
 - **QA as evidence** — a release to PROD requires executable proof: acceptance
   criteria validated by Playwright assertions against the deployed QA artifact, not
   just a human "it looks fine".
@@ -65,7 +59,7 @@ so you can exercise every concept below in one repeatable environment:
 | **Rollback & hotfix** | Redeploy known-good artifacts, expedited hotfix lane from `main` |
 | **Observability** | Grafana health dashboard, Seq log search, Dozzle container logs |
 | **Quality gates** | Gitleaks (secrets), Semgrep (SAST), Trivy (SCA), Checkov (IaC), JSON validation — local and in CI |
-| **Agent evaluation** | Promptfoo eval (61 routing cases) verifies the agent routes requests correctly |
+| **Agent evaluation** | Promptfoo eval (64 routing cases) verifies the agent routes requests correctly |
 | **Operational learning** | A `knowledge/` base that captures errors, fixes, patterns, and lessons learned for future agents |
 | **Parallel delivery** | Optional multi-ticket coordination in isolated Git worktrees with a serialized deployment lane |
 
@@ -77,7 +71,7 @@ so you can exercise every concept below in one repeatable environment:
 > command is installing the template into a test repository (§2.1). Everything after
 > that — lab setup, stack configuration, ticket work, deployments — is driven by
 > **prompts to your AI coding agent**, which runs the underlying CLI commands for you.
-> (Verification tools like the agent eval in §5.2 are the exception and are shown as
+> (Verification tools like the agent eval in §6.2 are the exception and are shown as
 > commands.)
 
 ### 2.1 Install The Template (the only command)
@@ -193,10 +187,21 @@ To stop the lab when done, ask the agent: `Stop the lab environment.`
 A ticket moves through the flow below (each step is a skill the agent loads from
 `AGENTS.md` → Workflow Stage Routing):
 
-```text
-OpenProject ticket → OpenSpec change → feature branch → TDD implementation
-→ PR in Gitea → AI review → feedback fixes → merge to dev → CI deploys
-→ QA evidence → release → PROD (explicit) → retrospective
+```mermaid
+flowchart TD
+    A[OpenProject ticket] --> B[OpenSpec change]
+    B --> C[Feature branch]
+    C --> D[TDD implementation]
+    D --> E[PR in Gitea]
+    E --> F[AI review]
+    F --> G[Feedback fixes]
+    G --> F
+    F --> H[Merge to dev]
+    H --> I[CI deploys]
+    I --> J[QA evidence]
+    J --> K[Release]
+    K --> L[PROD]
+    L --> M[Retrospective]
 ```
 
 ### Step-by-step
@@ -236,11 +241,22 @@ the agent verifies DEV and the user approves; promotion to PROD is **always expl
 
 ### The deployment sequence
 
-```text
-merge to dev → post-merge deploy → CI deploys DEV + /health gate
-→ agent verifies DEV → user approves QA → CI deploys QA + /health validation
-→ Grafana dashboard update → E2E QA evidence gate (Playwright against QA) → RC tag
-→ explicit PROD promotion (main fast-forward + final tag) → PROD /health checks
+```mermaid
+flowchart TD
+    A[Merge to dev] --> B[Post-merge deploy]
+    B --> C[CI deploys DEV]
+    C --> D[Health gate]
+    D --> E[Agent verifies DEV]
+    E --> F{User approves QA?}
+    F -->|No| E
+    F -->|Yes| G[CI deploys QA]
+    G --> H[Health validation]
+    H --> I[Grafana board update]
+    I --> J[E2E QA gate]
+    J -->|Pass| K[RC tag]
+    J -->|Fail| L[QA bug ticket]
+    K --> M[PROD promotion]
+    M --> N[PROD health checks]
 ```
 
 1. **Post-merge deploy** — verifies the merge, triggers the CI pipeline, waits for the
@@ -266,9 +282,67 @@ merge to dev → post-merge deploy → CI deploys DEV + /health gate
 
 ---
 
-## 5. Flows Explained Step By Step
+## 5. Quality Gates
 
-### 5.1 The Flow Documents
+Quality is enforced at three layers: **local hooks** (fast, developer-side), **local CI
+loop** (reproduce CI on the dev machine), and **CI PR validation** (authoritative gate
+on every pull request). No code merges until all three pass.
+
+### 5.1 Local Hooks (lefthook)
+
+| Hook | What runs |
+| ---- | ---------- |
+| **pre-commit** | `gitleaks protect --staged --redact` (secret scan on staged files), `npx trunk fmt apps` (formatting) |
+| **commit-msg** | Commit message contract validation, `gitleaks detect` on full tree, `trunk check apps` (lint) |
+| **pre-push** | `python -m tools.sdd_cli stack-tests` — unit + integration + architecture tests with coverage gate (≥ 80%, from `.template/quality.local.json`); skipped cleanly when no stack is configured |
+
+These are the fast first line. They run on every commit and every push — no bypass
+with `--no-verify`.
+
+### 5.2 Local CI Loop (`sdd-e2e-ci:local`)
+
+Before opening or updating a PR, the agent can reproduce the full CI gate set inside
+the same Docker image the CI job uses. This catches errors cheaply:
+
+| # | Gate | Tool | Scope |
+|---| ---- | ---- | ----- |
+| 1 | JSON validation | `python3 -m json.tool` | Every `*.json` in the repo |
+| 2 | Secret scan | Gitleaks | Full working tree |
+| 3 | SAST scan | Semgrep | `apps/`, `packages/` (rules from `.semgrep-rules.json`) |
+| 4 | SCA scan | Trivy | `apps/`, `packages/` (vulnerability DB) |
+| 5 | IaC scan | Checkov | `apps/`, `infra/k8s/`, `infra/deployment/`, `.gitea/` (config in `.checkov.yml`) |
+
+All five gates must exit 0. Fix code, re-run from the start, push only when the loop
+prints `ALL GATES PASSED`.
+
+### 5.3 CI PR Validation (`.gitea/workflows/pr-validation.yml`)
+
+The **authoritative full gate** — runs on every pull request (any target branch). Steps:
+
+| Step | What it checks |
+| ---- | -------------- |
+| **JSON validation** | Every `*.json` parses via `python3 -m json.tool` |
+| **Secret scan** | Gitleaks — repo-wide, exit 0 on clean |
+| **SAST scan** | Semgrep — `apps/`, `packages/` only (skipped if absent) |
+| **SCA scan** | Trivy — `apps/`, `packages/` only (skipped if absent) |
+| **IaC scan** | Checkov — deploy + implementation folders (skipped if absent) |
+| **Kustomize overlay validation** | Renders every env overlay, asserts NodePort uniqueness cluster-wide |
+| **App registry validation** | `apps.json` schema + per-app Dockerfile existence + project-name prefix rule |
+| **Dev flow gate** | Requires `agent-reviewed` label — set by the AI review agent only when the run is green and zero findings remain |
+
+The `agent-reviewed` label gate ties the review loop to CI: the label is removed
+ever the run is red/pending or findings exist, so a PR cannot merge until both the
+AI review is clean and CI is green.
+
+**Local vs CI split:** local hooks are fast feedback on touched behavior. Gitea PR
+validation is the authoritative gate. The CI image intentionally has no stack runtimes
+— product tests run via the lefthook pre-push hook on the dev machine.
+
+---
+
+## 6. Flows Explained Step By Step
+
+### 6.1 The Flow Documents
 
 The workflows are documented in [`docs/workflows/`](docs/workflows/README.md) and
 mirror the routing contract in `AGENTS.md`:
@@ -287,7 +361,7 @@ Workflow Stage Routing table in [`AGENTS.md`](AGENTS.md).
 local CI loop (`sdd-e2e-ci:local`), and PR validation — see
 [`implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) §7.
 
-### 5.2 Agent Eval (Verify The Router)
+### 6.2 Agent Eval (Verify The Router)
 
 The harness is validated by a deterministic **Promptfoo** suite that checks the routing
 logic — given a scenario (ticket state, branch, PR, QA evidence, explicit request), the
@@ -308,7 +382,7 @@ python -m tools.sdd_cli agent-eval run      # fails loudly, exits non-zero on fa
 python -m tools.sdd_cli agent-eval view     # open the report in the browser
 ```
 
-- **61 routing cases** (see `.agents/agent-evals/README.md` for the authoritative count)
+- **64 routing cases** (see `.agents/agent-evals/README.md` for the authoritative count)
   cover ticket lifecycle, edge cases, parallel delivery, deployment lanes,
   infrastructure validation, explicit workflow-stage requests, state-driven resume,
   frontend design skill activation, and regression.
@@ -321,9 +395,9 @@ Details: [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md).
 
 ---
 
-## 6. References
+## 7. References
 
-### Documentation
+### 7.1 Documentation
 
 | Topic | Document |
 | ----- | -------- |
@@ -336,14 +410,14 @@ Details: [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md).
 | Agent-enforced delivery policy | [`.agents/skills/_shared/delivery-contract.md`](.agents/skills/_shared/delivery-contract.md) |
 | Agent eval (Promptfoo routing suite) | [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md) |
 
-### Skills Catalog
+### 7.2 Skills Catalog
 
 The full skill manifest (82 skills across ticket, implement, review, QA, deploy,
 monitor, security, test, quality, observability, kubernetes, and more) lives in
 [`.agents/skills/manifest.json`](.agents/skills/manifest.json). Skills are the executable
 instructions the agent loads per routing stage.
 
-### Tools & Tech Stack
+### 7.3 Tools & Tech Stack
 
 - **AI workflow engine:** [OpenAI Codex](https://developers.openai.com/codex/),
   [Codex Agent Skills](https://developers.openai.com/codex/skills),
@@ -357,11 +431,12 @@ instructions the agent loads per routing stage.
   [Kubernetes](https://kubernetes.io/), [kind](https://kind.sigs.k8s.io/)
 - **Observability:** [Grafana](https://grafana.com/), [Seq](https://datalust.co/seq),
   [Dozzle](https://dozzle.dev/)
+- **K8s dashboard:** [Headlamp](https://headlamp.dev/) — native desktop app that reads `~/.kube/config`
 - **QA / E2E:** [Playwright](https://playwright.dev/)
 - **Helper CLI:** [Python](https://www.python.org/) + standard library
   (`tools/sdd_cli`)
 
-### External Skills Used (attribution)
+### 7.4 External Skills Used (attribution)
 
 - [Caveman](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) — terse, token-saving
 communication
@@ -381,7 +456,7 @@ communication
 
 ---
 
-## 7. Considered But Not Adopted (Future Improvements)
+## 8. Considered But Not Adopted (Future Improvements)
 
 Tools and concepts that were **evaluated or considered for the lab but not adopted** —
 kept here as candidates for future improvements. Each is a single external dependency
@@ -391,7 +466,7 @@ none is required to run the workflows in this document.
 | Tool / concept | Why deferred | Revisit when |
 | -------------- | ------------ | ------------ |
 | [mem0](https://github.com/mem0ai/mem0) — long-term agent memory (semantic + BM25) | The lab's memory is `docs/` + `knowledge/` — durable, reviewable, repo-based; an external memory DB is harder to audit. | Cross-session/cross-repo memory is needed. |
-| [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) and [Graphify](https://github.com/Graphify-Labs/graphify) — codebase knowledge graphs (tree-sitter, no LLM for code) | The shell previously **removed** MCP/search tooling; local grep + `knowledge/` cover today's needs with zero extra services. | Codebases grow large enough that grep costs more tokens than a graph query. |
+| [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) — codebase knowledge graphs (tree-sitter, no LLM for code) | The shell previously **removed** MCP/search tooling; local grep + `knowledge/` cover today's needs with zero extra services. | Codebases grow large enough that grep costs more tokens than a graph query. |
 | [bm25s](https://github.com/xhluca/bm25s) — fast BM25 lexical search over docs | The `knowledge/` base is small and curated; `knowledge_search.py` covers it without a search index. | `knowledge/` outgrows linear scans. |
 | [OpenRouter](https://openrouter.ai/) — route LLM calls to cheaper/faster models per effort | The lab runs Codex directly and keeps the eval **deterministic (no LLM)**; no API key needed. | Cost-sensitive bulk runs or per-stage model tiering. |
 | [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) — compresses terminal output 60–90% before it hits the context window | The agent already runs commands with scoped outputs; adds a hook/proxy layer that can over-trim edge-case context. | Agent context runs hot on large test suites/CI loops. |
