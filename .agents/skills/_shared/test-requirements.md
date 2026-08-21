@@ -10,15 +10,16 @@ metrics.
 
 ---
 
-## Three Test Levels
+## Four Test Levels (Per App, All Mandatory)
 
-Every implementation must cover **three levels** of automated tests, written in TDD order (test first, then code):
+Every implementation must cover **four levels** of automated tests per app, written in TDD order (test first, then code). All 4 levels are **mandatory** — skipping any level is a process violation (authority level 5):
 
 | # | Test Level | What It Validates | Examples | Scope |
 |---|------------|-------------------|----------|-------|
 | 1 | **Unit tests** | Single function, component, or class in isolation (no network, no DB) | Function return value, component render output, state transition, pure logic | **Per component/module** — one test file per component |
 | 2 | **Integration tests** | Interaction between units (API + DB, service + repository, middleware pipeline) | HTTP endpoint → service → repository round-trip, auth middleware flow, message broker publish/consume | **Per endpoint/feature** — one test file per endpoint or feature boundary |
-| 3 | **Architecture tests** | Structural rules, layering, dependency constraints (no runtime, no external deps) | Layer access rules (presentation → domain ✓, domain → infra ✗), forbidden imports, naming conventions, package cycle prevention | **Project-wide** — one file for the entire change |
+| 3 | **E2E tests** | Full user journey through the running application | Playwright browser tests (navigate, click, assert), API full-request-cycle tests, login → dashboard flow | **Per user journey** — one test file per major user flow |
+| 4 | **Architecture tests** | Structural rules, layering, dependency constraints (no runtime, no external deps) | Layer access rules (presentation → domain ✓, domain → infra ✗), forbidden imports, naming conventions, package cycle prevention | **Project-wide** — one file for the entire change |
 
 ### Key Rules
 

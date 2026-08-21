@@ -203,7 +203,10 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
 6. **Feed human ticket text to dev-flow-explore-change skill.** Load `.agents/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
-7. **Run iterative grill-with-docs cycles on the human ticket text (1 minimum, 4 maximum — no fixed default; ~2 typical, keep grilling while questions remain).**
+7. **⚠️ HARD GATE: Run iterative grill-with-docs cycles on the human ticket text (1 minimum, 4 maximum — no fixed default; ~2 typical, keep grilling while questions remain).**
+
+    **This step is non-negotiable.** Even when the ticket description appears complete, the agent MUST ask the user
+    clarifying questions. Skipping this step violates authority level 5 per `delivery-contract-ticket.md`.
 
     a. **Cycle 1 (mandatory — always ask the user):** grill-with-docs interviews the user on
     unclear aspects, generating questions about gaps, ambiguities, and missing context. **Even
@@ -224,9 +227,17 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
     Ticket depth drives the count.
     e. **Combine all grilled answers** from every cycle into one consolidated grill-with-docs output (refined/clarified requirements with domain knowledge).
 
+    **Write grill output to `openspec/changes/<change-name>/grill-output.md`** before proceeding to step 8.
+    This file is required evidence — step 8 (curate IA block) verifies it exists.
+
+    **⚠️ BLOCKING RULE:** If grill output file does not exist or is empty, STOP before step 8.
+    Do not generate IA block without grill evidence.
+
     Uses `grill-with-docs` + `domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
 
-8. **Curate both outputs into one agile-format IA block.** Take output from step 11 (dev-flow-explore-change analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
+8. **⚠️ HARD GATE: Verify grill output exists before curating.** Check that `openspec/changes/<change-name>/grill-output.md` exists and is non-empty. If missing, STOP — go back to step 7 and run grill-with-docs cycles. Do not proceed without grill evidence.
+
+    **Curate both outputs into one agile-format IA block.** Take output from step 6 (dev-flow-explore-change analysis) + output from step 7 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
 
     Full agile-format sections:
     - Problem / opportunity

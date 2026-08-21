@@ -430,8 +430,9 @@ def discover_project_guidance(
 def setup_project_guidance(
     root: Path, values: dict[str, Any], dry_run: bool = False,
     interactive: bool = False,
+    selected_skills: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Search the internet for stack-relevant skills, optionally ask user which to install.
+    """Search the internet for stack-relevant skills, optionally install user-selected ones.
 
     Called after the user sets their project stack (frontend, backend, database).
     The flow:
@@ -439,23 +440,45 @@ def setup_project_guidance(
     1. Reads stack values from ``values`` or the project profile
     2. For each stack value, searches the public skills.sh registry via
        ``npx skills find <query>`` and picks the top results by popularity
-    3. If interactive=True in a TTY: shows discovered skills and asks user which to install
-    4. Installs ONLY the user-selected skills via ``npx skills add`` (falls back to GitHub copy)
+    3. If interactive=True and selected_skills provided: installs those
+       directly. Otherwise returns ``pendingSkills`` for the agent to present.
+    4. Installs ONLY the user-selected skills via ``npx skills add``
+       (falls back to GitHub copy)
     5. Updates ``.agents/skills/manifest.json`` with the new skills and their
-       stack category tags (bookkeeping only — guidance is never answered from local skills)
+       stack category tags (bookkeeping only — guidance is never answered
+       from local skills)
 
-    Without an interactive TTY confirmation (CI or non-interactive callers),
-    discovered skills are NEVER auto-installed — the function reports the
-    candidates and stops so the user can choose.
+    **Authority level 5 — hard rule:** The agent NEVER decides which skills
+    to install. Interactivity is agent-driven:
+
+    1. This function discovers skills and returns ``pendingSkills``.
+    2. The agent presents ``pendingSkills`` to the user (however the agent
+       handles user interaction — there is no prescribed mechanism).
+    3. The agent re-calls this function with ``selected_skills`` containing
+       the user's choices.
+    4. This function installs only those skills.
+
+    No ``input()`` calls. No auto-installation. No agent discretion.
 
     Args:
         root: Repository root.
         values: Stack values (keys: frontend, backend, database).
         dry_run: If True, only report what would be done (no side effects).
-        interactive: If True and running in a TTY, prompt user to select which skills to install.
+        interactive: If True, allow skill installation when
+            ``selected_skills`` is also provided. When False, skills are
+            discovered but never installed regardless of other params.
+        selected_skills: List of ``package_skill`` strings the agent gathered
+            from the user. Accepts exact package_skill values
+            (e.g. ``openai/skills@aspnet-core``) or bare skill names
+            (e.g. ``aspnet-core``) matched against discovered skills.
+            When ``None``, ``pendingSkills`` is returned for the agent to
+            present — nothing is installed.
 
     Returns:
-        Dict with mode, valid, actions, per-skill internet results, and manifest status.
+        Dict with mode, valid, actions, per-skill internet results, and
+        manifest status.  When skills are discovered but not yet installed,
+        ``pendingSkills`` contains the list for the agent to present via
+        the agent's user-interaction mechanism.
     """
     result = configure_result(
         "SetupProjectGuidance", dry_run, write_enabled=not dry_run
@@ -493,71 +516,95 @@ def setup_project_guidance(
         result["valid"] = True
         return result
 
-    # 2.5 Interactive: let user select which skills to install
+    # 2.5 Skill selection — agent-driven.
     #
-    # Rule (authority level 5): skills are ONLY installed after the user
-    # explicitly chooses them. Without an interactive TTY confirmation we
-    # NEVER auto-install — we report the internet candidates and stop.
-    if interactive and sys.stdin.isatty():
-        print(f"\n  Found {len(all_internet_skills)} stack-relevant skill(s) online:")
-        for i, skill in enumerate(all_internet_skills, 1):
-            exists = _skill_exists_locally(root, skill["skill"])
-            suffix = " (already installed)" if exists else ""
-            print(f"    [{i:2d}] {skill['package_skill']} ({skill['installs']:,} installs){suffix}")
-
-        print()
-        try:
-            choice = input(
-                "  Which to install? (numbers/comma-sep, 'all', 'none'): "
-            ).strip().lower()
-        except EOFError:
-            # isatty() can be True even when stdin has no input (pty wrappers,
-            # agent shells, some CI). Never install without an explicit user
-            # choice (authority level 5) — treat EOF as "none" and fall through
-            # to the interactive-skipped path below.
-            print(
-                "\n  (no interactive input available — nothing will be installed; "
-                "run the interactive flow in a terminal to choose skills)"
-            )
-            choice = "none"
-
-        selected: list[dict[str, Any]] = []
-        if choice in ("all", "a"):
-            selected = all_internet_skills
-        elif choice not in ("none", "n", ""):
-            indices: list[int] = []
-            for token in choice.split(","):
-                token = token.strip()
-                if token.isdigit():
-                    indices.append(int(token))
-            for idx in indices:
-                if 1 <= idx <= len(all_internet_skills):
-                    selected.append(all_internet_skills[idx - 1])
-        # If user selected nothing, skip install
-        if not selected:
+    # Rule (authority level 5): The agent NEVER decides which skills to
+    # install. When selected_skills is provided, install those. Otherwise
+    # return pendingSkills for the agent to present to the user.
+    # No input() calls. No auto-installation. No agent discretion.
+    if interactive:
+        # Agent provided selections via selected_skills parameter — use them
+        # directly, no input() call needed.
+        if selected_skills is not None:
+            # Normalize: match by package_skill (exact) or bare skill name
+            skill_map = {s["package_skill"]: s for s in all_internet_skills}
+            name_map = {s["skill"].lower(): s for s in all_internet_skills}
+            matched: list[dict[str, Any]] = []
+            for pick in selected_skills:
+                pick_lower = pick.strip().lower()
+                if pick_lower in skill_map:
+                    matched.append(skill_map[pick_lower])
+                elif pick_lower in name_map:
+                    matched.append(name_map[pick_lower])
+                else:
+                    result["actions"].append({
+                        "path": "stack",
+                        "key": "skill.not-found",
+                        "severity": "warning",
+                        "message": f"Skill '{pick}' not found in discovered skills — skipping.",
+                        "phase": "audit",
+                    })
+            if not matched:
+                result["actions"].append({
+                    "path": "stack",
+                    "key": "interactive.skipped",
+                    "severity": "info",
+                    "message": "None of the selected skills matched discovered skills.",
+                    "phase": "audit",
+                })
+                result["pendingSkills"] = [
+                    {
+                        "package_skill": s["package_skill"],
+                        "skill": s["skill"],
+                        "installs": s["installs"],
+                    }
+                    for s in all_internet_skills
+                ]
+                result["valid"] = True
+                return result
+            all_internet_skills = matched
+        else:
+            # No agent-provided selections. Return pendingSkills so the
+            # agent presents them to the user — NEVER use input() here.
+            result["pendingSkills"] = [
+                {
+                    "package_skill": s["package_skill"],
+                    "skill": s["skill"],
+                    "installs": s["installs"],
+                }
+                for s in all_internet_skills
+            ]
             result["actions"].append({
                 "path": "stack",
-                "key": "interactive.skipped",
+                "key": "pending.agent-action",
                 "severity": "info",
-                "message": "User chose not to install any skills.",
+                "message": (
+                    f"Agent must present {len(all_internet_skills)} "
+                    f"discovered skill(s) to the user and re-call "
+                    f"with selected_skills."
+                ),
                 "phase": "audit",
             })
             result["valid"] = True
             return result
-        all_internet_skills = selected
     else:
-        # No interactive confirmation available (non-TTY or non-interactive
-        # caller). Never auto-install: report candidates and require the user
-        # to run the interactive flow to choose what gets installed.
+        # Interactive=False: caller does not want skill installation at all.
+        # Return pendingSkills so the agent can present them if needed.
+        result["pendingSkills"] = [
+            {
+                "package_skill": s["package_skill"],
+                "skill": s["skill"],
+                "installs": s["installs"],
+            }
+            for s in all_internet_skills
+        ]
         result["actions"].append({
             "path": "stack",
             "key": "interactive.required",
             "severity": "info",
             "message": (
-                "Found stack-relevant skill(s) online but no interactive "
-                "confirmation is available — nothing was installed. Run the "
-                "interactive flow (TTY) so the user can choose which skills "
-                "to install."
+                f"Found {len(all_internet_skills)} skill(s) online. Agent "
+                f"must present to the user and re-call with selected_skills."
             ),
             "phase": "audit",
         })

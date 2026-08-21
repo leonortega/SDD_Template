@@ -30,6 +30,12 @@ Replace the placeholders:
 
 **❌ HARD GATE (authority level 5): Never remove branch protection to merge a PR.** Branch protection exists to enforce review quality. If self-approval is blocked, use a review-user token (FirstUser/SecondUser) to approve — do NOT delete or weaken the protection rule.
 
+**❌ HARD GATE (authority level 5): Never close, abandon, or recreate a PR to bypass the lifecycle.** If a PR is blocked (approval, CI, review), fix the blocker — do NOT close the PR and create a new one to skip steps. Closing a PR to avoid approval requirements is a process violation.
+
+**❌ HARD GATE (authority level 5): Never merge a PR via API, force-merge, admin merge, or branch protection bypass.** The agent reports the PR as ready (agent-reviewed label + green CI) and stops. The human merges. Using curl, Gitea API, admin endpoints, or any programmatic merge is a process violation — even when the approval API returns unexpected states (e.g., PENDING instead of APPROVED). If the approval API fails, report the blocker and stop. Do NOT find workarounds.
+
+**❌ HARD GATE (authority level 5): Never approve a PR on behalf of any user** — including provisioned lab accounts (FirstUser, SecondUser), admin tokens, or any other identity. The automated approval is the `agent-reviewed` label (zero findings + green PR Validation). The agent never submits an approval review — not via API, not via token impersonation, not via any mechanism. If branch protection requires human approval and the approval API is broken, report the blocker and stop.
+
 ### Step 1 — Create / Reuse The PR
 
 **❌ HARD GATE (authority level 5): PR base branch MUST be `{baseBranch}` (normally `dev`), never `main`, unless the user explicitly directs a PROD release PR.** Creating a PR targeting `main` when the workflow deploys from `dev` means code never reaches the deploy branch.
