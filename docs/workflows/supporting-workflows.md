@@ -348,7 +348,7 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.agents/agent-evals/promptfooconfig.yaml`, 61 cases — see
+(`.agents/agent-evals/promptfooconfig.yaml`, 64 cases — see
 `.agents/agent-evals/README.md` for the authoritative count). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
