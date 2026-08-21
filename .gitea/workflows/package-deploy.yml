@@ -1,12 +1,10 @@
 name: Package and deploy
 
 on:
-  # Deploy ONLY when a pull request targeting `dev` is MERGED (closed event
-  # with merged=true). Direct pushes to dev never deploy: every change that
-  # reaches the dev branch must come through a PR merge.
-  pull_request:
-    types:
-      - closed
+  # Deploy when commits are pushed/merged to `dev`.
+  # Gitea Actions does not reliably fire pull_request:closed events,
+  # so push covers PR merges (merge commit lands on dev).
+  push:
     branches:
       - dev
   # Explicit operator override (e.g. QA/PROD promotion from a release branch).
@@ -22,22 +20,21 @@ on:
           by the DEV/QA pipeline for this commit (build is skipped). Defaults to
           the dispatched ref's head commit.
         required: false
-        default: ''
+        default: ""
       release_version:
         description: Final release version recorded in release-prod.json (e.g. v1.2.3)
         required: false
-        default: ''
+        default: ""
       source_rc_version:
         description: Source RC tag recorded in release-prod.json (e.g. v1.2.3-rc.1)
         required: false
-        default: ''
+        default: ""
 
 jobs:
   build-and-deploy:
-    # Dispatch always runs. For pull_request events (already restricted to
-    # `closed` PRs targeting dev), only deploy when the PR was actually
-    # merged — a closed-without-merge PR must not deploy.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    # Dispatch always runs. For push events, deploy on every commit that
+    # lands on dev.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
@@ -47,16 +44,9 @@ jobs:
         id: sha
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # PR merge event: deploy the MERGE COMMIT on the base branch (dev),
-            # not the PR head — GITHUB_SHA for pull_request events points at the
-            # head, which is not the commit that landed on dev.
-            MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-            if [ -n "${MERGE_SHA}" ]; then
-              echo "SHA=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-            else
-              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            fi
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Push to dev: GITHUB_SHA is the merge commit on dev.
+            echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           else
             # workflow_dispatch: deploy the dispatched ref's head commit —
             # unless an explicit artifact_commit_sha is provided (PROD
@@ -97,8 +87,8 @@ jobs:
         id: env
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # PR merge into dev: deploy to DEV.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Push to dev: deploy to DEV.
             echo "ENV=dev" >> $GITHUB_OUTPUT
           else
             echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
@@ -108,9 +98,9 @@ jobs:
         id: targets
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # On PR merge into dev: deploy to DEV ONLY. QA is NOT auto-promoted:
-            # the agent verifies DEV, asks the user for approval, then re-dispatches
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # On push to dev: deploy to DEV ONLY. QA is NOT auto-promoted: the
+            # agent verifies DEV, asks the user for approval, then re-dispatches
             # this workflow with environment=qa (workflow_dispatch).
             echo "TARGETS=dev" >> $GITHUB_OUTPUT
           else
@@ -119,18 +109,12 @@ jobs:
             echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for deployable changes (src/, test/, or Dockerfiles)
-        # Deploy in ANY environment only when the change set touches a src/ or
-        # test/ folder at any depth (e.g. apps/<appId>/src/...), an app's
-        # Dockerfile (apps/<appId>/Dockerfile - the image content depends on
-        # it), or a packages/<pkg>/** path whose package an app declares in
-        # apps.json `dependsOn` (shared-code change -> rebuild the dependent
-        # apps). Docs, infra, and workflow-only changes must not
-        # deploy. Note: only folder-based matches count — co-located test files
-        # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
-        # fails open when the base commit cannot be resolved or the diff cannot
-        # be computed (no way to prove the change is doc-only, so do not block
-        # deploys).
+      - name: Check for deployable changes (src/, test/, Dockerfiles, package.json, infra)
+        # Deploy in ANY environment when the change set touches: src/test
+        # folders, Dockerfiles, package.json/package-lock.json, packages/
+        # with dependents, or infra/workflow paths (.gitea/, infra/). The
+        # gate fails open when the base commit cannot be resolved or the diff
+        # cannot be computed.
         #
         # Outputs (ADR-0002 app-aware build):
         # - DEPLOYABLE=true/false — whether any app must be rebuilt+redeployed.
@@ -165,14 +149,27 @@ jobs:
             exit 0
           fi
 
+          # Push to dev (merge commit): check if the merge commit has parents
+          # (i.e. it's a merge, not a direct push). For merge commits, the first
+          # parent is the pre-merge dev head. For direct pushes, fail open.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            MERGE_PARENT=$(git rev-parse --verify "${DEPLOY_SHA}^1" 2>/dev/null || echo "")
+            if [ -z "${MERGE_PARENT}" ]; then
+              echo "Push event with no parent — treating as deployable."
+              echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+              echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Use the first parent (pre-merge dev head) as the base for the diff.
+            BASE_SHA="${MERGE_PARENT}"
+          fi
+
           # Base for the change-set diff: the deploy commit's FIRST PARENT.
-          # For a merged-PR event, pull_request.base.sha points at the base
-          # branch head AFTER the merge — i.e. the merge commit itself — so
-          # base..merge would be empty and every deploy would be skipped. The
-          # first parent is the pre-merge dev head (PR merge) / the dispatched
-          # commit's parent (workflow_dispatch); the depth-2 checkout made it
-          # available in both cases.
-          BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          # For push events, BASE_SHA is already set above from the merge
+          # parent. For workflow_dispatch, use the commit's parent.
+          if [ -z "${BASE_SHA:-}" ]; then
+            BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          fi
 
           if [ -z "${BASE_SHA}" ]; then
             echo "No base commit available — treating change as deployable."
@@ -223,6 +220,8 @@ jobs:
           affected = []
           packages_deployable = False
           deployable = False
+          # Infra/workflow paths that affect deployment but are not app src.
+          INFRA_PATHS = (r"^\.gitea/", r"^infra/", r"^apps/[^/]+/Dockerfile$")
           for path in changed:
               path = path.strip()
               if not path:
@@ -241,6 +240,13 @@ jobs:
                       affected.append(m.group(1))
                   deployable = True
                   continue
+              m = re.match(r"^apps/([^/]+)/(package(-lock)?\.json)$", path)
+              if m:
+                  # Dependency changes affect the Docker image - rebuild.
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  deployable = True
+                  continue
               m = re.match(r"^packages/([^/]+)/", path)
               if m:
                   pkg = m.group(1)
@@ -251,6 +257,15 @@ jobs:
                           packages_deployable = True
                           if app_id not in affected:
                               affected.append(app_id)
+                  continue
+              # Infra/workflow changes (k8s overlays, CI workflows, deployment
+              # config) affect all apps — they may change how apps are built,
+              # deployed, or exposed.
+              if any(re.match(p, path) for p in INFRA_PATHS):
+                  for app_id in apps_by_id:
+                      if app_id not in affected:
+                          affected.append(app_id)
+                  deployable = True
           affected.sort()
           affected_csv = ",".join(affected)
           print(f"Affected apps from change set: {affected_csv or '(none)'}")
@@ -688,8 +703,8 @@ jobs:
               if affected is not None and app_id not in affected:
                   continue
               image = f'{registry}/{app_id}:{commit_sha}'
-              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
-              print(f'Set image for {app_id}: {image}')
+              subprocess.run(['kustomize', 'edit', 'set', 'image', f'{app_id}:latest={image}'], check=True)
+              print(f'Set image for {app_id}: {app_id}:latest -> {image}')
           "
 
             # Build manifest to temp file
@@ -743,7 +758,14 @@ jobs:
               elif name in affected:
                   kept_deployments.append(doc)
               else:
-                  skipped.append(name)
+                  # Check if the resource belongs to an affected app via
+                  # the app: label (e.g. Secrets named <appId>-secrets
+                  # where the affected app is <appId>).
+                  app_label = re.search(r"^  app:\s*(\S+)", doc, flags=re.M)
+                  if app_label and app_label.group(1) in affected:
+                      kept_deployments.append(doc)
+                  else:
+                      skipped.append(name)
           # Always rewrite all three files: when nothing is kept they must be
           # TRUNCATED, or the APPLY_SKIPPED guard below would apply the stale
           # full manifest (with :latest tags) instead of skipping.
