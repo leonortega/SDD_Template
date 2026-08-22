@@ -1,3 +1,18 @@
+<div align="center">
+  <img src="docs/assets/banner.svg" alt="agentic-delivery-lab banner" width="100%" />
+
+  <h1>Agentic Delivery Lab</h1>
+  <p><em>A free, local laboratory testing how far AI agents can drive a real SDLC + DevOps pipeline — ticket to production, evidence-based QA, zero vendor lock-in.</em></p>
+
+  ![Last Commit](https://img.shields.io/github/last-commit/leonortega/agentic-delivery-lab)
+  ![Kubernetes](https://img.shields.io/badge/kubernetes-ready-326CE5?logo=kubernetes&logoColor=white)
+  ![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker&logoColor=white)
+  ![Playwright](https://img.shields.io/badge/e2e-playwright-2EAD33?logo=playwright&logoColor=white)
+  ![Skills](https://img.shields.io/badge/skills-82-5EEAD4)
+  ![Eval Cases](https://img.shields.io/badge/eval%20cases-64-F5A623)
+</div>
+
+
 # AI SDLC + DevOps Laboratory
 
 A **free, local laboratory for testing an AI-assisted SDLC and DevOps workflow** end to

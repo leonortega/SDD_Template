@@ -1,0 +1,79 @@
+<svg viewBox="0 0 1280 320" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono','Fira Code',monospace">
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1E2530" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0D1117" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#0D1117" stop-opacity="1"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="320" fill="#0D1117"/>
+  <rect width="1280" height="320" fill="url(#grid)"/>
+  <rect width="1280" height="320" fill="url(#fade)"/>
+
+  <!-- title block -->
+  <text x="48" y="76" font-size="34" font-weight="700" fill="#E8EDF2" letter-spacing="0.5">agentic-delivery-lab</text>
+  <text x="48" y="106" font-size="15" fill="#7C8798" font-family="system-ui,sans-serif">A free, local laboratory for AI-driven SDLC + DevOps delivery</text>
+
+  <!-- pipeline schematic -->
+  <g transform="translate(48, 190)">
+    <!-- connector line -->
+    <line x1="20" y1="0" x2="1180" y2="0" stroke="#2A3341" stroke-width="2"/>
+
+    <!-- node template: circle + label above + sublabel below -->
+    <!-- Ticket -->
+    <circle cx="20" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="20" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">Ticket</text>
+
+    <!-- Spec -->
+    <circle cx="192" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="192" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">Spec</text>
+
+    <!-- Code -->
+    <circle cx="364" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="364" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">Code</text>
+
+    <!-- Review -->
+    <circle cx="536" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="536" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">Review</text>
+
+    <!-- Deploy: highlighted node (signature element) -->
+    <circle cx="708" cy="0" r="10" fill="#F5A623" filter="url(#glow)"/>
+    <text x="708" y="-21" font-size="13" fill="#F5A623" text-anchor="middle" font-weight="700" font-family="system-ui,sans-serif">Deploy</text>
+
+    <!-- QA -->
+    <circle cx="880" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="880" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">QA</text>
+
+    <!-- Release -->
+    <circle cx="1052" cy="0" r="7" fill="#0D1117" stroke="#5EEAD4" stroke-width="2.5"/>
+    <text x="1052" y="-18" font-size="13" fill="#C7D0DB" text-anchor="middle" font-family="system-ui,sans-serif">Release</text>
+
+    <!-- Rollback -->
+    <circle cx="1180" cy="0" r="7" fill="#0D1117" stroke="#4B5563" stroke-width="2.5"/>
+    <text x="1180" y="-18" font-size="13" fill="#7C8798" text-anchor="middle" font-family="system-ui,sans-serif">Rollback</text>
+
+    <!-- sublabel row: what drives each stage -->
+    <text x="20" y="30" font-size="11" fill="#4B5563" text-anchor="middle">OpenProject</text>
+    <text x="192" y="30" font-size="11" fill="#4B5563" text-anchor="middle">OpenSpec</text>
+    <text x="364" y="30" font-size="11" fill="#4B5563" text-anchor="middle">TDD agent</text>
+    <text x="536" y="30" font-size="11" fill="#4B5563" text-anchor="middle">AI review</text>
+    <text x="708" y="30" font-size="11" fill="#7C6221" text-anchor="middle">k8s / Nexus</text>
+    <text x="880" y="30" font-size="11" fill="#4B5563" text-anchor="middle">Playwright</text>
+    <text x="1052" y="30" font-size="11" fill="#4B5563" text-anchor="middle">RC → prod</text>
+    <text x="1180" y="30" font-size="11" fill="#3A424D" text-anchor="middle">known-good</text>
+  </g>
+
+  <!-- eyebrow tag, top right -->
+  <text x="1232" y="40" font-size="12" fill="#5EEAD4" text-anchor="end" letter-spacing="1">82 SKILLS · 64 EVAL CASES</text>
+</svg>
