@@ -522,77 +522,31 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
             "message": "No project profile configured. Run `configure set-project-stack` first.",
         })
 
-    # 4a2. No stack configured — prompt for it now (interactive TTY only) so
-    #      project guidance actually runs at the END of setup-lab. set-project-
-    #      stack records the profile AND runs guidance itself, so a single
-    #      prompt drives the whole skill-discovery flow. Non-TTY (CI/agent):
-    #      keep the report below — never auto-install (authority level 5).
+    # 4a2. No stack configured — the agent must ask the user for project
+    #      name + stack (however the agent handles user interaction), then
+    #      call set-project-stack with --values-json. This function never
+    #      prompts directly (no input() calls) — interactivity is agent-driven.
     stack_prompted = False
-    if not stack_values and not dry_run and sys.stdin.isatty():
+    if not stack_values and not dry_run:
         print("\n  -- Project Stack Setup (required for project guidance) --")
-        print("     Enter your project name + stack; guidance will then discover")
-        print("     and install stack-relevant skills.")
-        try:
-            name = input("  Project name (required, e.g. dellop): ").strip()
-            frontend = (
-                input("  Frontend (react/vue/none, Enter=skip): ").strip() or "none"
-            )
-            backend = (
-                input("  Backend (fastapi/django/none, Enter=skip): ").strip() or "none"
-            )
-            database = (
-                input("  Database (postgresql/sqlite/none, Enter=skip): ").strip()
-                or "none"
-            )
-        except EOFError:
-            print("  (no interactive input available — set the stack later via ")
-            print("   `python -m tools.sdd_cli configure set-project-stack`)")
-            name = ""
-        if name:
-            from .environment_lab import set_project_stack
-
-            stack_result = set_project_stack(
-                root,
-                {
-                    "name": name,
-                    "frontend": frontend,
-                    "backend": backend,
-                    "database": database,
-                },
-                dry_run=False,
-            )
-            if stack_result.get("valid"):
-                stack_prompted = True
-                details = stack_result.get("guidanceDetails") or {}
-                found = details.get("foundSkills", []) or []
-                print(f"  [OK] Project stack recorded for {name!r}.")
-                print(f"  [OK] Project guidance found {len(found)} skill(s) online.")
-                steps.append({
-                    "command": "stage4-stack",
-                    "title": "Project stack (set via setup-lab prompt)",
-                    "valid": True,
-                    "message": (
-                        f"Recorded project {name!r} and ran project guidance "
-                        f"({len(found)} skill(s) found online)."
-                    ),
-                })
-            else:
-                for err in stack_result.get("errors", []):
-                    print(f"  [WARN] {err}")
-                steps.append({
-                    "command": "stage4-stack",
-                    "title": "Project stack",
-                    "valid": True,
-                    "message": "Stack prompt rejected (see warnings) — run `configure set-project-stack`.",
-                })
+        print("     No stack configured. The agent will ask the user for")
+        print("     project name + stack, then call set-project-stack.")
+        steps.append({
+            "command": "stage4-stack",
+            "title": "Project stack",
+            "valid": True,
+            "message": (
+                "No stack configured. Agent must: (1) ask user for project "
+                "name + frontend/backend/database, (2) call "
+                "set-project-stack --values-json, (3) re-run setup-lab."
+            ),
+            "agentAction": "ask-stack-and-set",
+        })
 
     if dry_run or (not stack_values and not stack_prompted):
         if not stack_values:
             print("\n  [WARN] Cannot search for skills: no stack configured.")
-            print(
-                "     Run `python -m tools.sdd_cli configure set-project-stack ...`"
-                " then re-run `full-setup` (or setup-lab) to run project guidance."
-            )
+            print("     Agent will ask the user for project name + stack.")
         else:
             print(f"\n  (dry-run) Would search internet for stack-relevant skills.")
         steps.append({

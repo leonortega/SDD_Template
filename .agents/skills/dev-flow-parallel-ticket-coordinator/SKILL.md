@@ -177,12 +177,9 @@ Route each ticket by current durable checkpoint:
 - Todo with no branch: use `dev-flow-start-ticket` in that ticket worktree. The child agent MUST run the
   refinement always-ask gate (Section 2 step 5) before writing that ticket's curated IA block.
 - In Progress with branch/OpenSpec and no PR: use `dev-flow-implement-ticket` in that ticket worktree.
-- Open PR (chained or not): **follow the shared PR lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md`) —
-  steps 2–7 apply to EVERY open PR in that ticket worktree. The shared lifecycle is the single source of truth for
-  the PR flow: reviewer requests (Steps 2 + 6), AI review (Step 3), feedback loop (Step 4), CI validation (Step 5),
-  and merge readiness (Step 7). Chained/sibling PRs get the same gate as the first PR — never skip the shared
-  lifecycle for any open PR. Run `dev-flow-pr-review-agent` as Step 3, and `dev-flow-pr-review-feedback-loop` as
-  Step 4, but do NOT redefine their behavior here.
+- Open PR (chained or not): **⚠️ HARD GATE (authority level 5): Load and follow the PR lifecycle skill.** Load `.agents/skills/_shared/pipeline-pr-lifecycle.md` and follow every step it defines, in order. Do NOT skip, reorder, or substitute any step. Chained/sibling PRs get the same gate as the first PR.
+
+  **Verification:** After the PR lifecycle completes, verify every step defined in `pipeline-pr-lifecycle.md` was executed. If any step was skipped, STOP and complete it before proceeding.
 - Merged PR awaiting artifact/QA: use `dev-ops-post-merge-deploy` only when the serialized deployment lane is free or
 already owned by that ticket.
 - Ticket in QA: use `configured QA gate` only when the serialized deployment lane is free or already owned by that

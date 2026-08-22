@@ -200,6 +200,9 @@ mode before `configured QA gate`.
 invoke `dev-ops-deploy-prod`.
 - PROD incident or regression: invoke `dev-ops-rollback-prod` when restore is needed, or `dev-ops-hotfix-prod` when a
 targeted code fix is needed.
+- PROD deployed and verified, or all environments (DEV/QA/PROD) healthy: invoke `dev-flow-archive-change` to archive
+the OpenSpec change. **This is a mandatory step — the ticket cannot move to Done without archiving the OpenSpec
+change.** The archive must sync delta specs to `openspec/specs/` and commit the result.
 - User asks where the work stands, or routing has multiple plausible targets: invoke `dev-flow-pipeline-status`.
 
 ## Rerun Policy
@@ -222,6 +225,11 @@ from earlier AI feedback.
 - QA product defect routes to `dev-flow-file-qa-bug`, not direct code edits inside QA.
 
 ## Failure Rules
+
+**❌ HARD GATE (authority level 5): OpenSpec archive is mandatory before Done.** The ticket cannot move to Done state
+without archiving the OpenSpec change. After PROD deployment (or all environments healthy), the orchestrator MUST invoke
+`dev-flow-archive-change`. If the archive is skipped, stop and report: "OpenSpec change not archived — this is a
+process violation." The archive must sync delta specs to `openspec/specs/` and commit the result.
 
 If routing evidence is ambiguous, validation is missing for the next mutating stage, or the ticket context lock
 conflicts with durable checkpoints, stop or route to `dev-flow-pipeline-status` instead

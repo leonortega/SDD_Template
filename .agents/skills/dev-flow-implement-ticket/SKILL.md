@@ -353,9 +353,14 @@ stop and route back to `dev-flow-start-ticket` to complete enrichment first.
 
 **Enforcement sequence:**
 1. **Read the IA curated block** from the ticket description — extract every acceptance criterion.
-2. Build the **acceptance-to-test map**: map each IA curated AC to specific tests. Every AC must have at least one
-corresponding test. If an AC cannot be tested, flag it and ask the user.
-3. Write ALL tests first (unit + integration + architecture per `.agents/skills/_shared/test-requirements.md`).
+2. Build the **acceptance-to-test map**: map each IA curated AC to specific tests. Every AC must have at least one corresponding test. If an AC cannot be tested, flag it and ask the user.
+3. **Write ALL 4 test levels per app** before ANY product code. Every app (`apps/<appId>/`) must have tests in all 4 subfolders:
+   - `test/unit/` — unit tests (per component, service, function)
+   - `test/integration/` — integration tests (per endpoint, feature flow)
+   - `test/e2e/` — end-to-end tests (Playwright for web, full-journey for API)
+   - `test/architecture/` — architecture tests (layering, dependencies, structural rules)
+
+   **❌ HARD RULE: You cannot skip any test level.** Writing only unit tests is a process violation. All 4 levels must exist per app before product code is written. If a level has no applicable tests for a specific AC, document why in the test file (e.g., "E2E test covered by Playwright in test/e2e/").
 4. Run the test suite — confirm ALL new tests are RED (failing because no product code exists yet).
 5. **Only after RED is confirmed**, proceed to write product code.
 6. Each implementation cycle follows RED → GREEN → REFACTOR per `.agents/skills/_shared/pipeline-tdd-cycle.md`.
@@ -664,16 +669,15 @@ template never carries starter shapes alongside real implementations. If no shap
 app was implemented without being registered), the step reports `prune.none` and continues — it is never a
 blocker, only a cleanup.### 10–12. PR Lifecycle (Shared)
 
-**Follow the 7-step shared PR lifecycle** in `.agents/skills/_shared/pipeline-pr-lifecycle.md` exactly. Do NOT
-re-implement, duplicate, or redefine its steps. The shared lifecycle owns:
+**⚠️ HARD GATE (authority level 5): Load and follow the PR lifecycle skill.** Before creating or reusing a PR,
+the agent MUST:
+1. Load `.agents/skills/_shared/pipeline-pr-lifecycle.md`
+2. Follow every step it defines, in order
+3. Do NOT skip, reorder, or substitute any step
+4. Do NOT re-implement, duplicate, or redefine its steps in this skill
 
-- Step 1: Create/reuse PR + ticket comment + state move
-- Step 2: Request human reviewers (hard gate — immediate)
-- Step 3: AI review via `dev-flow-pr-review-agent`
-- Step 4: Feedback loop via `dev-flow-pr-review-feedback-loop`
-- Step 5: CI validation (pr-validation.yml)
-- Step 6: Re-verify reviewers (hard gate)
-- Step 7: Human merge + post-merge handoff
+**Verification:** After the PR lifecycle completes, verify every step defined in `pipeline-pr-lifecycle.md` was
+executed. If any step was skipped, STOP and complete it before reporting handoff.
 
 This skill adds only **ticket-specific PR body content** and **ticket-specific handoff comment content**.
 
@@ -698,8 +702,10 @@ remaining blockers or risks.
 
 ## Archive And QA Policy
 
-- Do not archive OpenSpec changes in this skill.
-- Archive only after PR merge in a separate post-merge flow.
+- Do not archive OpenSpec changes in this skill — archive is delegated to `dev-flow-continue-implementation` after
+final deployment.
+- **MANDATORY: After all environments are deployed and verified, the orchestrator MUST invoke `dev-flow-archive-change`.**
+This is not optional. The archive is the closing action of the implementation lifecycle.
 - QA findings after merge must create a new related ticket provider bug ticket linked to the parent ticket.
 - The bug ticket gets its own branch, OpenSpec change if needed, implementation, PR, and review flow.
 

@@ -183,6 +183,15 @@ constraint:
    already QA-approved and code-reviewed, so no AI review, feedback loop, or CI
    fix loop runs — only PR creation + reviewer request (Step 2 command) + the
    `agent-reviewed` label + human approval/merge.
+
+   **⚠️ HARD GATE (authority level 5): Load and follow the PR lifecycle skill.**
+   Load `.agents/skills/_shared/pipeline-pr-lifecycle.md` and follow every step it defines, in order.
+   Do NOT skip, reorder, or substitute any step. Do NOT re-implement, duplicate, or redefine its steps.
+   The PROD release-PR variant uses a subset of steps (create PR, request reviewers, label, human merge),
+   but the lifecycle file is the source of truth for which steps apply.
+
+   **Verification:** After the PR lifecycle completes, verify every step defined in `pipeline-pr-lifecycle.md` was executed.
+   If any step was skipped, STOP and complete it before proceeding.
 4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod`,
    `artifact_commit_sha={qaApprovedCommit}`, `release_version={finalVersion}`, and
    `source_rc_version={sourceRcVersion}` on the release branch so the workflow checks out exactly the QA-approved

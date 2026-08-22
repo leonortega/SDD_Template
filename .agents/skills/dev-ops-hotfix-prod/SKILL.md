@@ -80,6 +80,13 @@ PR lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md` — create/reu
 PR → request reviewers → AI review → feedback loop → CI validation →
 re-verify reviewers → human merge). Key hotfix-specific details:
 
+   **⚠️ HARD GATE (authority level 5): Load and follow the PR lifecycle skill.**
+   Load `.agents/skills/_shared/pipeline-pr-lifecycle.md` and follow every step it defines, in order.
+   Do NOT skip, reorder, or substitute any step. Do NOT re-implement, duplicate, or redefine its steps.
+
+   **Verification:** After the PR lifecycle completes, verify every step defined in `pipeline-pr-lifecycle.md` was executed.
+   If any step was skipped, STOP and complete it before proceeding.
+
    - **AC source:** the incident/hotfix ticket description (set in step 3).
    - **Task source:** the OpenSpec `tasks.md` for any tasks created in step 5.
    - **Tests are non-negotiable even for hotfixes.** The mandatory test requirement (unit + integration + architecture,

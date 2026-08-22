@@ -269,10 +269,9 @@ git push
 - Comment body: `**Branch:** fix/{bugKeySlug}-{short-description}\n**Parent ticket:** {parentTicketKey}`
 - Severity: `blocking` (stop if comment cannot be created — the PR link is required for traceability)
 
- 1. **Follow the 7-step shared PR lifecycle** in `.agents/skills/_shared/pipeline-pr-lifecycle.md` exactly.
-    Do NOT re-implement, duplicate, or redefine its steps. The bug-specific PR body is filled above;
-    the mechanics (create/reuse PR → request reviewers → AI review → feedback loop → CI validation →
-    re-verify reviewers → human merge) are defined once in the shared pattern.
+ 1. **⚠️ HARD GATE (authority level 5): Load and follow the PR lifecycle skill.** Load `.agents/skills/_shared/pipeline-pr-lifecycle.md` and follow every step it defines, in order. Do NOT skip, reorder, or substitute any step. Do NOT re-implement, duplicate, or redefine its steps. The bug-specific PR body is filled above.
+
+    **Verification:** After the PR lifecycle completes, verify every step defined in `pipeline-pr-lifecycle.md` was executed. If any step was skipped, STOP and complete it before proceeding.
 
 ### Phase 6 — Merge & Deploy To QA (User-Approved)
 

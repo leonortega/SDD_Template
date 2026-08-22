@@ -335,7 +335,7 @@ API fails, stop and report. There is no alternative path.
 | Deploy to production                   | `dev-ops-deploy-prod`              | `.agents/skills/dev-ops-deploy-prod/SKILL.md`              |
 | Rollback production                    | `dev-ops-rollback-prod`            | `.agents/skills/dev-ops-rollback-prod/SKILL.md`            |
 | Hotfix production                      | `dev-ops-hotfix-prod`              | `.agents/skills/dev-ops-hotfix-prod/SKILL.md`              |
-| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md`        |
+| Post-merge deploy (automatic after PR merge) | `dev-ops-post-merge-deploy` | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md` |
 | CI deploy completed / post-deploy update | `grafana-board-update`             | `.agents/skills/grafana-board-update/SKILL.md`             |
 | File and fix a QA bug                  | `dev-flow-file-qa-bug`             | `.agents/skills/dev-flow-file-qa-bug/SKILL.md`             |
 | Clean up temporary resources after a closed ticket | `dev-ops-cleanup-resources` | `.agents/skills/dev-ops-cleanup-resources/SKILL.md` |

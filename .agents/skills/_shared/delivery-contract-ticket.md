@@ -89,12 +89,41 @@ PROD promotion or a feature-branch merge whose diff touches `apps/<appId>/src/**
 Before `dev-flow-start-ticket` mutates Git, OpenProject status, the delivery lock, or OpenSpec, classify the ticket as:
 
 - `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
-- `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed OpenProject
-block.
+- `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed OpenProject block.
 - `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
 
 For `refinable`, update only the generated OpenProject block and continue. For `blocked`, stop before branch,
 OpenProject status, delivery lock, or OpenSpec mutation and report the missing intent.
+
+## Grill-With-Docs Hard Gate
+
+**⚠️ HARD GATE (authority level 5): grill-with-docs must run before IA block generation.**
+
+The `dev-flow-start-ticket` skill must complete at least 1 grill-with-docs cycle before curating the IA block or
+patching the ticket description. This is non-negotiable — even when the ticket description appears complete, the
+agent MUST ask the user clarifying questions about:
+
+- Scope boundaries and edge cases
+- Acceptance criteria gaps or ambiguities
+- Validation expectations
+- Unstated assumptions
+- Dependencies or constraints
+
+**Evidence requirement:** grill-with-docs output must be written to
+`openspec/changes/<change-name>/grill-output.md` before step 8 (curate IA block). The file must contain:
+
+1. The questions asked to the user
+2. The user's answers
+3. Any decisions made (in-scope vs out-of-scope)
+
+**Blocking rules:**
+
+- If grill output file does not exist, STOP before IA block generation.
+- If grill was not run (file missing or empty), STOP before ticket description PATCH.
+- The telemetry entry for `dev-flow-start-ticket` must include the grill output filename as evidence.
+
+**Rationale:** Even detailed tickets have gaps that only the user can answer. Skipping grill produces
+incomplete IA blocks with unstated assumptions, leading to implementation drift.
 
 ## Review Workload Forecast
 
